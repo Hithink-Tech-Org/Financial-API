@@ -2,6 +2,12 @@ import { describe, expect, test } from 'vitest';
 import { remoteCapabilities } from '../../src/contracts/remote-capabilities.js';
 
 const EXPECTED_BASE_IDS = [
+  'market.history-batch',
+  'index.history-batch',
+  'fund.history-batch',
+  'financials.income-batch',
+  'financials.balance-sheet-batch',
+  'financials.cash-flow-batch',
   'symbol.search',
   'symbol.list',
   'market.snapshot',
@@ -83,10 +89,28 @@ const EXPECTED_BASE_IDS = [
   'special.dragon-tiger',
 ];
 
-test('registers exactly the frozen 88 remote capabilities with unique command paths', () => {
+test('registers all 112 remote capabilities with unique command paths', () => {
   expect(remoteCapabilities.map((capability) => capability.id).sort()).toEqual(
     [
       ...EXPECTED_BASE_IDS,
+      'news.article-detail',
+      'news.flash-list',
+      'news.flash-refresh',
+      'news.notice-detail',
+      'news.topic-hot-list',
+      'news.anomaly-analysis',
+      'news.stock-timeline-list',
+      'special.limit-up-statistics',
+      'special.dragon-tiger-stock-institution',
+      'special.dragon-tiger-department-classic-record',
+      'special.dragon-tiger-department-history',
+      'special.abnormal-monitor',
+      'special.auction-opportunities',
+      'special.auction-opportunity-dates',
+      'ipo.a-share-calendar',
+      'ipo.hk-applications',
+      'ipo.hk-calendar',
+      'ipo.hk-issue-detail',
       'futures.variety-plates',
       'futures.contracts',
       'futures.main-continuous',
@@ -99,7 +123,7 @@ test('registers exactly the frozen 88 remote capabilities with unique command pa
     ].sort(),
   );
   expect(new Set(remoteCapabilities.map((capability) => capability.command.join(' '))).size).toBe(
-    88,
+    112,
   );
   expect(remoteCapabilities.every((capability) => capability.method === 'GET')).toBe(true);
 });
@@ -212,7 +236,7 @@ test('maps valuation snapshot to its dedicated command and validates raw code to
   expect(valuation.inputSchema.safeParse({ thscodes: '000300.TI' }).success).toBe(false);
 });
 
-test('keeps all 34 fund capabilities under the fund command group', () => {
+test('keeps all 35 fund capabilities under the fund command group', () => {
   const fund = remoteCapabilities.filter((capability) => capability.id.startsWith('fund.'));
   expect(fund.map((capability) => capability.command.join(' '))).toEqual([
     'fund profile',
@@ -249,6 +273,7 @@ test('keeps all 34 fund capabilities under the fund command group', () => {
     'fund indicators-table',
     'fund quota-summary',
     'fund quota-list',
+    'fund history-batch',
   ]);
   expect(fund.map((capability) => capability.endpoint)).toEqual([
     '/api/fund/profile/detail',
@@ -285,6 +310,7 @@ test('keeps all 34 fund capabilities under the fund command group', () => {
     '/api/fund/indicators/table',
     '/api/fund/quota/summary',
     '/api/fund/quota/list',
+    '/api/fund/market/historical-batch',
   ]);
 });
 
@@ -407,7 +433,7 @@ test('accepts documented comma-separated asset types and rejects unknown tokens'
   );
 });
 
-test('keeps all eleven special-data capabilities under special only', () => {
+test('keeps all eighteen special-data capabilities under special only', () => {
   const specialPaths = remoteCapabilities
     .filter((capability) => capability.id.startsWith('special.'))
     .map((capability) => capability.command.join(' '));
@@ -423,6 +449,13 @@ test('keeps all eleven special-data capabilities under special only', () => {
     'special hot-stock-history',
     'special hot-stock-trend',
     'special dragon-tiger',
+    'special limit-up-statistics',
+    'special dragon-tiger-stock-institution',
+    'special dragon-tiger-department-classic-record',
+    'special dragon-tiger-department-history',
+    'special abnormal-monitor',
+    'special auction-opportunities',
+    'special auction-opportunity-dates',
   ]);
   expect(
     remoteCapabilities
@@ -440,6 +473,13 @@ test('keeps all eleven special-data capabilities under special only', () => {
     '/api/a-share/special-data/hot-stock-list-history',
     '/api/a-share/special-data/hot-stock-rank-trend',
     '/api/a-share/special-data/dragon-tiger-list',
+    '/api/a-share/special-data/limit-up-statistics',
+    '/api/a-share/special-data/dragon-tiger-stock-institution',
+    '/api/a-share/special-data/dragon-tiger-department-classic-record',
+    '/api/a-share/special-data/dragon-tiger-department-history',
+    '/api/a-share/special-data/abnormal-monitor-list',
+    '/api/a-share/special-data/auction-stock-opportunities',
+    '/api/a-share/special-data/auction-opportunity-dates',
   ]);
   expect(
     remoteCapabilities.some(

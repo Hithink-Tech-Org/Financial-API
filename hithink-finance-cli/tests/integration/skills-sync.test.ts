@@ -11,8 +11,6 @@ import {
   dedicatedSkillTargets,
   removeDedicatedSkills,
   syncDedicatedSkills,
-  skillsCliArguments,
-  skillsRemoveArguments,
 } from '../../src/infrastructure/skills/installer.js';
 import { readBundledSkillsStatus } from '../../src/infrastructure/skills/status.js';
 
@@ -26,35 +24,13 @@ afterEach(async () =>
   Promise.all(roots.splice(0).map((value) => rm(value, { recursive: true, force: true }))),
 );
 
-test('uses pinned local skills CLI with global copy mode and no telemetry', () => {
-  const invocation = skillsCliArguments('C:/pkg');
-  expect(invocation.command).toBe(process.execPath);
-  expect(invocation.args[0]?.replaceAll('\\', '/')).toContain('node_modules/skills/bin/cli.mjs');
-  expect(invocation.args[1]).toBe('add');
-  expect(invocation.args).toEqual(
-    expect.arrayContaining(['--global', '--copy', '--all', '--full-depth']),
-  );
-  expect(invocation.env.DISABLE_TELEMETRY).toBe('1');
-  expect(invocation.args.join(' ')).not.toContain('latest');
-});
-
-test('removes only the twelve package-owned skill names from every agent', () => {
-  const invocation = skillsRemoveArguments('C:/pkg');
-  expect(invocation.args).toEqual(expect.arrayContaining(['remove', '--global', '--yes']));
-  expect(
-    invocation.args.filter((argument) => argument.startsWith('hithink-finance-')),
-  ).toHaveLength(12);
-  expect(invocation.args).not.toContain('--agent');
-  expect(invocation.args).not.toContain('--all');
-});
-
 test('reports bundled Skills without claiming Agent discovery targets were verified', async () => {
   const packageRoot = path.resolve(import.meta.dirname, '../..');
   const status = await readBundledSkillsStatus(packageRoot);
 
   expect(status).toMatchObject({
-    cliVersion: '0.1.13',
-    skillCount: 12,
+    cliVersion: '0.2.0',
+    skillCount: 14,
     targetsVerified: false,
     targetStatus: 'not-verified',
   });

@@ -22,3 +22,4 @@
 | --- | --- | --- |
 | [A股指数历史K线](get_a_share_index_prices_historical.md) | `get_a_share_index_prices_historical` | 公开 |
 | [A股指数行情快照](get_a_share_index_prices_snapshot.md) | `get_a_share_index_prices_snapshot` | 公开 |
+| [A股指数批量历史K线](get_a_share_index_prices_historical_batch.md) | `get_a_share_index_prices_historical_batch` | 公开 |

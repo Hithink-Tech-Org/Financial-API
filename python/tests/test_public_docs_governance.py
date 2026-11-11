@@ -78,7 +78,7 @@ def test_root_changelog_preserves_history_and_documents_this_release() -> None:
         assert change in changelog
 
 
-def test_root_skills_are_consolidated_to_hithink_finance() -> None:
+def test_root_skills_separate_api_wiki_and_mcp_tool_routing() -> None:
     skills_root = REPO_ROOT / "skills"
     skill_directories = {
         path.name
@@ -86,10 +86,10 @@ def test_root_skills_are_consolidated_to_hithink_finance() -> None:
         if path.is_dir() and not path.name.startswith(".")
     }
 
-    assert skill_directories == {"hithink-finance"}
+    assert skill_directories == {"hithink-finance", "hithink-finance-mcp"}
     skill = read("skills/hithink-finance/SKILL.md")
     assert "name: hithink-finance" in skill
-    for access_mode in ("REST API", "MCP", "CLI"):
+    for access_mode in ("REST API", "API Wiki", "API Router", "CLI"):
         assert access_mode in skill
     assert "渐进" in skill or "按需" in skill
 
@@ -99,7 +99,6 @@ def test_root_skills_are_consolidated_to_hithink_finance() -> None:
         "api.md",
         "client-only-capabilities.md",
         "cli.md",
-        "mcp.md",
     }
     assert {
         path.name
@@ -107,15 +106,22 @@ def test_root_skills_are_consolidated_to_hithink_finance() -> None:
         if path.is_dir() and any(path.iterdir())
     } == {
         "api",
-        "cli",
-        "mcp",
     }
+    mcp_root = skills_root / "hithink-finance-mcp"
+    assert "name: hithink-finance-mcp" in (mcp_root / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert (mcp_root / "references/mcp.md").is_file()
+    assert (mcp_root / "references/mcp/meta/tickers-search.md").is_file()
+    assert not list((references / "mcp").rglob("*.md"))
 
 
 def test_upstream_api_contract_has_one_canonical_source_and_skill_mirror() -> None:
     canonical_root = REPO_ROOT / "docs" / "api"
     mirror_root = REPO_ROOT / "skills" / "hithink-finance" / "references" / "api"
-    canonical_contracts = {record["id"] for record in inventory() if record["kind"] == "rest"}
+    canonical_contracts = {
+        record["id"] for record in inventory() if record["kind"] == "rest"
+    }
     mirrored_contracts = [
         endpoint
         for path in mirror_root.rglob("*.md")
@@ -126,7 +132,9 @@ def test_upstream_api_contract_has_one_canonical_source_and_skill_mirror() -> No
             re.M,
         )
     ]
-    assert Counter(mirrored_contracts) == Counter({item: 1 for item in canonical_contracts})
+    assert Counter(mirrored_contracts) == Counter(
+        {item: 1 for item in canonical_contracts}
+    )
     assert (canonical_root / "market-dumps.md").read_text(encoding="utf-8") == (
         mirror_root / "market-dumps.md"
     ).read_text(encoding="utf-8")

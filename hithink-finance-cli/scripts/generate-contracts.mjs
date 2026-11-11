@@ -4,6 +4,9 @@ import { format } from 'prettier';
 import { createHash } from 'node:crypto';
 import { remoteCapabilities } from '../dist/contracts/remote-capabilities.js';
 import { localCapabilities } from '../dist/contracts/local-capabilities.js';
+import { authCapabilities } from '../dist/contracts/auth-capabilities.js';
+import { remoteOutputOptions, tableOutputOptions } from '../dist/contracts/output-options.js';
+import { externalize } from '../dist/output/json.js';
 
 const root = path.resolve(process.argv[2] ?? process.cwd());
 async function writeFormatted(file, content, parser) {
@@ -19,6 +22,7 @@ async function writeFormatted(file, content, parser) {
 }
 await mkdir(path.join(root, 'schemas'), { recursive: true });
 const capabilities = [
+  ...authCapabilities.map((item) => ({ ...item, source: 'authentication' })),
   ...remoteCapabilities.map(({ id, command, endpoint, method, paging, window }) => ({
     id,
     command,
@@ -40,28 +44,43 @@ const skillCapabilities = [...remoteCapabilities, ...localCapabilities].sort((le
 );
 await writeFormatted(
   path.join(root, 'schemas', 'capabilities.json'),
-  `${JSON.stringify({ schema_version: '1', capabilities }, null, 2)}\n`,
+  `${JSON.stringify({ schema_version: '1', global_options: externalize(tableOutputOptions), capabilities }, null, 2)}\n`,
   'json',
 );
 await writeFormatted(
   path.join(root, 'schemas', 'command-envelope.schema.json'),
-  `${JSON.stringify({ $schema: 'https://json-schema.org/draft/2020-12/schema', title: 'hithink-finance command envelope', oneOf: [{ required: ['ok', 'command', 'data', 'meta'] }, { required: ['ok', 'command', 'error', 'meta'] }] }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      title: 'hithink-finance command envelope',
+      oneOf: [
+        { properties: { ok: { const: true } }, required: ['ok', 'command', 'data', 'meta'] },
+        { properties: { ok: { const: false } }, required: ['ok', 'command', 'error', 'meta'] },
+      ],
+    },
+    null,
+    2,
+  )}\n`,
   'json',
 );
 
 const domainConfigs = {
   shared: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 做安装后自检、API Key 认证、配置、版本更新、诊断、卸载、Skills 安装/同步/移除，以及 JSON 输出、安全和大结果处理规则；不要用于行情、财务、指数、特色数据或研究取数。',
+      '管理 hithink-finance CLI 的 OAuth/API Key 登录、配置、自检、版本更新、卸载和 Skills 安装/同步/修复；查询 CLI 可用能力及通用输出规则。',
     identity:
-      '共享规则和生命周期入口。只放全局约束、认证、输出、安全、更新和 Skills 管理，不承载业务取数路由。',
+      'CLI 认证、配置、输出和生命周期入口。宿主优先依据各内置 Skill 的 description 选择业务域；此处提供通用规则及需要时的辅助选路。',
     decisions: [
       ['检查 CLI 是否可用或版本', '`hithink-finance version --format json`'],
       ['查看真实能力清单', '`hithink-finance capabilities --format json`'],
       ['查看某个命令参数契约', '`hithink-finance schema <capability-id> --format json`'],
       [
-        '获取并保存 API Key',
-        '先打开 https://fuyao.aicubes.cn/admin/ 获取 API Key，再运行 `hithink-finance auth login --api-key-stdin --format json`；交互终端也可运行 `hithink-finance auth login` 隐藏输入',
+        '首次登录（默认推荐 OAuth）',
+        '`hithink-finance auth login --method oauth`；先用 `auth status` 复用当前有效凭据',
+      ],
+      [
+        '显式选择 API Key 登录',
+        '先复用统一来源的 Key，缺失时在 https://fuyao.aicubes.cn/admin/ 获取；用 `hithink-finance auth login --method api-key --api-key-stdin --format json` 登录，交互终端使用 `--method api-key` 隐藏输入',
       ],
       ['检查认证状态', '`hithink-finance auth status --format json`'],
       ['查看非敏感配置', '`hithink-finance config show --format json`'],
@@ -77,14 +96,13 @@ const domainConfigs = {
       ['预览卸载', '`hithink-finance uninstall --plan --format json`'],
     ],
     boundaries: [
-      '业务取数请求必须切到 symbol、market、special-data、financials、index、fund、futures、options、valuation、data 或 research skill。',
       '用户可以为了便利把 API Key 提供给 Agent 上下文；Agent 不复述，并提示聊天平台可能保留消息记录。不要把 Key 写入命令参数、项目配置、日志、Markdown、Git 或其他可共享内容；本地配置优先 stdin、用户级持久来源或系统凭据库。',
       '不要把 stderr 更新提示、诊断详情或完整大数据结果当作最终答案原样展开。',
     ],
   },
   symbol: {
     description:
-      '通过 hithink-finance CLI 搜索股票、指数、基金、期货和期权等标的，将名称或 ticker 消歧为 thscode，并导出 A 股或指数代码表；行情和成分查询转对应业务 Skill。',
+      '通过 hithink-finance CLI 搜索股票、指数、基金、期货和期权的名称或代码，消歧为 thscode；导出 A 股或指数代码表。',
     identity:
       '标的识别和代码表路由。目标是把自然语言名称、ticker、thscode 或代码表需求变成后续可执行的证券标识。',
     decisions: [
@@ -100,11 +118,12 @@ const domainConfigs = {
   },
   market: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 获取 A 股集合竞价快照与短期基准、普通行情快照、历史 K 线、交易日历、复权因子、公司行动和本地全市场面板；涨跌停、炸板、热榜、龙虎榜、异动和游资机构榜转 hithink-finance-special-data。',
+      '通过 hithink-finance CLI 查询 A 股实时价格、行情快照、集合竞价、历史 K 线、交易日历、复权因子和公司行动，导出本地历史行情面板。',
     identity:
       '普通行情和本地行情派生能力。优先使用本地库覆盖的历史/面板能力，必要时走远端同花顺金融数据服务。',
     decisions: [
       ['单票历史日线/K 线', '`market history`；`--source auto` 会在本地覆盖时走本地'],
+      ['多只 A 股历史 K 线', '`market history-batch --thscodes <codes>`；每批最多 10 个原始代码'],
       ['实时或分页行情快照', '`market snapshot`'],
       ['集合竞价实时/终态快照', '`market auction-snapshot`'],
       ['集合竞价短期基准', '`market auction-benchmark`'],
@@ -121,7 +140,7 @@ const domainConfigs = {
   },
   'special-data': {
     description:
-      '用于 Agent 通过 hithink-finance CLI 查询特色数据：涨停池、跌停池、炸板池、连板天梯、个股异动、异动原因、飙升榜、热股榜、热度历史/趋势、龙虎榜、游资和机构榜；普通行情转 hithink-finance-market。',
+      '通过 hithink-finance CLI 查询涨停池、跌停池、炸板池、连板天梯、股票异动及原因、热股与热度排名、龙虎榜和机构营业部记录。',
     identity: '特色榜单和事件型数据入口。强调窗口约束和榜单口径，不替代普通行情或财报。',
     decisions: [
       ['今日异动列表/异动标签', '`special anomaly-list`，仅今日'],
@@ -135,20 +154,72 @@ const domainConfigs = {
       ['历史热股榜', '`special hot-stock-history`'],
       ['单股热度趋势', '`special hot-stock-trend`'],
       ['龙虎榜/机构/游资', '`special dragon-tiger`'],
+      ['市场涨停汇总与连板统计', '`special limit-up-statistics`'],
+      ['单股龙虎榜机构金额', '`special dragon-tiger-stock-institution`'],
+      [
+        '营业部经典战绩与历史记录',
+        '`special dragon-tiger-department-classic-record` 或 `special dragon-tiger-department-history`',
+      ],
+      ['严重异动与重点监控', '`special abnormal-monitor`'],
+      [
+        '集合竞价机会与可选日期',
+        '`special auction-opportunities` 与 `special auction-opportunity-dates`',
+      ],
     ],
     boundaries: [
       'today-only 能力不能补历史；用户要历史时说明边界并选择有历史窗口的命令。',
       '榜单热度不是投资建议，不要扩写成推荐或确定性原因。',
     ],
   },
+  news: {
+    description:
+      '通过 hithink-finance CLI 查询资讯详情、快讯、公告解读、热门专题、日期范围异动解读和个股分时新闻。',
+    identity: '资讯查询入口。保留正文 HTML、链接、字符串标识、空值与原有顺序。',
+    decisions: [
+      ['已知资讯标识的正文', '`news article-detail --client-type WEB --encoded-seq <id>`'],
+      ['栏目快讯', '`news flash-list --tag-id <id> --seq 0`'],
+      ['刷新快讯', '`news flash-refresh --tag-id <id> --seq <seq> --create-time-ms <ms>`'],
+      ['公告详情与结构化解读', '`news notice-detail --seq <id>`'],
+      ['热门深度专题', '`news topic-hot-list --tab-id <id>`'],
+      ['日期范围异动解读', '`news anomaly-analysis --begin-date <date> --end-date <date>`'],
+      ['个股分时新闻', '`news stock-timeline-list --thscode 300033.SZ --offset first`'],
+    ],
+    boundaries: [
+      '栏目与内容标识由调用方按接口提供；内容链接不保证能转换为资讯详情标识。',
+      '快讯只承诺单次查询，分页与刷新边界以接口说明为准；seq 必须使用字符串以保留长整数精度。',
+      '公告查询提供已有结构化解读；公告正文、PDF 与附件超出当前范围。',
+    ],
+  },
+  ipo: {
+    description:
+      '通过 hithink-finance CLI 查询 A 股新股申购和上市日历、港股递表与认购日历，以及发行价格、每手股数和入场费等新股资料。',
+    identity: '新股资料与发行阶段查询入口。区分沪深、北交所和港股；港股发行标识来自日历。',
+    decisions: [
+      [
+        'A 股发行、可申购或待上市新股',
+        '`ipo a-share-calendar --market sh_sz|bj --status upcoming|subscribable|awaiting_listing`',
+      ],
+      ['港股递表记录', '`ipo hk-applications`'],
+      ['港股认购或待上市日历', '`ipo hk-calendar`'],
+      ['港股发行价格、每手股数和入场费', '`ipo hk-issue-detail --issue-code <id>`'],
+    ],
+    boundaries: [
+      '发行资料不提供申购、交易或投资建议。',
+      '发行记录标识与正式证券代码分别使用，不补造 thscode。',
+    ],
+  },
   financials: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 查询 A 股利润表、资产负债表、现金流量表、财务指标、年度/季度报告窗口；价格行情转 hithink-finance-market，指数财务不在本 skill 范围。',
+      '通过 hithink-finance CLI 查询 A 股利润表、资产负债表、现金流量表和财务指标；支持单只或批量查询、年报和季报窗口。',
     identity: 'A 股财务报表和指标入口。把报告期、时间窗口和 limit 约束转成稳定命令。',
     decisions: [
       ['利润表/收入成本利润项目', '`financials income`'],
       ['资产负债结构', '`financials balance-sheet`'],
       ['现金流量项目', '`financials cash-flow`'],
+      [
+        '多只股票的三大财务报表',
+        '`financials income-batch`、`balance-sheet-batch` 或 `cash-flow-batch`；每批最多 10 个原始代码',
+      ],
       ['单个报告期的财务指标', '`financials indicators`'],
       ['用户问价格或涨跌', '切到 `hithink-finance-market`'],
     ],
@@ -159,13 +230,14 @@ const domainConfigs = {
   },
   index: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 查询同花顺指数/概念/行业/地域/特色指数目录、指数成分股、指数快照和指数历史；个股行情转 hithink-finance-market，股票代码搜索转 hithink-finance-symbol。',
+      '通过 hithink-finance CLI 查询同花顺指数、概念、行业、地域和特色板块目录、指数成分股、指数实时快照和历史行情。',
     identity: '指数目录、指数成分和指数行情入口。只处理指数对象及其成分关系。',
     decisions: [
       ['找概念/行业/地域/特色指数目录', '`index catalog`'],
       ['查某个指数成分股', '`index constituents`'],
       ['查指数实时快照', '`index snapshot`'],
       ['查指数历史日线', '`index history`'],
+      ['多只指数历史日线', '`index history-batch --thscodes <codes>`；每批最多 10 个原始代码'],
       ['查个股历史/快照', '切到 `hithink-finance-market`'],
     ],
     boundaries: [
@@ -175,7 +247,7 @@ const domainConfigs = {
   },
   fund: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 查询基金档案、公司、经理、财务、诊断、资讯、募集、持仓、净值、收益、持有人结构、在线回测、通用指标、QDII 额度、ETF/LOF 快照和 ETF 历史；A 股行情转 hithink-finance-market，基金代码搜索转 hithink-finance-symbol。',
+      '通过 hithink-finance CLI 查询基金档案、公司和经理、持仓、净值、收益、基金财务与资讯、在线回测、指标及 QDII 额度；查询 ETF/LOF 快照和 ETF 历史行情。',
     identity:
       '基金资料、机构与经理、财务、业绩、披露和场内行情入口。根据基金类型、标识来源与市场形态选择稳定命令。',
     decisions: [
@@ -205,10 +277,14 @@ const domainConfigs = {
       ['历史股票/债券持仓', '先用对应 `report-dates`，再调用 `stock-history` 或 `bond-history`'],
       ['ETF/LOF 快照', '`fund snapshot`'],
       ['ETF 历史日线', '`fund history`'],
+      [
+        '多只场内基金行情',
+        '`fund snapshot --thscode <CSV>` 最多 100 个原始代码；`fund history-batch` 最多 10 个',
+      ],
       ['基金代码或名称搜索', '切到 `hithink-finance-symbol`'],
     ],
     boundaries: [
-      '按基金查询的能力使用单个 `thscode` 唯一定位基金。',
+      '基金详情按单个 `thscode` 定位；场内快照使用原 `--thscode` 接收最多 100 个原始代码的 CSV，并返回平铺报价。',
       '复杂对象和数组参数使用 JSON 字符串；绝对时间使用 Unix 毫秒，动态字段与局部空值保持原义。',
       '`fund snapshot` 只支持 ETF/LOF；`fund history` 只支持 ETF、固定 `1d` 且窗口最多 5 年。',
       '基金数据不是投资建议，不要据此扩写买卖或收益承诺。',
@@ -216,7 +292,7 @@ const domainConfigs = {
   },
   futures: {
     description:
-      '通过 hithink-finance CLI 查询期货品种、合约详情、持仓、仓单、基差、交易日程、分时和日 K。',
+      '通过 hithink-finance CLI 查询期货品种、合约目录与详情、主力/次主力/主连、商品指数、交易时段与日程、持仓、仓单、基差、分时和日 K。',
     identity: '期货公开资料和行情入口。按完整 thscode、品种与日期语义选择稳定命令。',
     decisions: [
       ['期货品种', '`futures varieties`'],
@@ -237,7 +313,8 @@ const domainConfigs = {
     ],
   },
   options: {
-    description: '通过 hithink-finance CLI 查询期权品种、合约详情、分时和日 K。',
+    description:
+      '通过 hithink-finance CLI 查询期权品种、合约目录与详情、交易时段、分时和日 K 行情。',
     identity: '期权公开资料和行情入口。按完整 thscode 和固定行情参数查询。',
     decisions: [
       ['期权品种', '`options varieties`'],
@@ -252,7 +329,7 @@ const domainConfigs = {
   },
   valuation: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 查询 A 股当前估值快照，包括市盈率、市净率、市销率和市现率；历史估值、ROE 和投资建议不在本 skill 范围。',
+      '通过 hithink-finance CLI 查询 A 股最新估值快照，包括市盈率、市净率、市销率和市现率。',
     identity:
       'A 股当前估值快照入口。按用户给出的股票代码批量返回服务端口径的估值指标，不自行补算或扩展指标。',
     decisions: [
@@ -269,7 +346,7 @@ const domainConfigs = {
   },
   data: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 管理本地 DuckDB：初始化、同步、状态、校验、迁移、修复、清理、删除、只读 SQL、导出；远端实时数据转对应业务 skill。',
+      '通过 hithink-finance CLI 管理本地 DuckDB 数据的初始化、同步、状态、质量校验、迁移、修复、清理和删除，以及只读 SQL 查询和文件导出。',
     identity:
       '本地数据生命周期和 SQL 入口。负责让数据可用、可校验、可导出，而不是解释所有研究结论。',
     decisions: [
@@ -295,7 +372,7 @@ const domainConfigs = {
   },
   research: {
     description:
-      '用于 Agent 通过 hithink-finance CLI 基于已有本地数据做中立研究准备、面板导出、只读 SQL、描述性统计和可复现实证数据集；不用于实时取数、荐股、择时、组合建议或投资结论。',
+      '通过 hithink-finance CLI 基于已有本地金融数据做中立研究：核验样本与时间窗口、描述性统计、面板导出和可复现实证数据集；组合本地命令完成多步分析。',
     identity:
       '研究工作流路由。它不拥有独立 `research` 命令，而是指导 Agent 组合 data、db 和 market panel 产出可复现数据证据。',
     decisions: [
@@ -317,9 +394,11 @@ const domainConfigs = {
 
 const domainOrder = [
   'shared',
+  'news',
   'symbol',
   'market',
   'special-data',
+  'ipo',
   'financials',
   'index',
   'fund',
@@ -339,7 +418,7 @@ const localCommandDetails = {
   },
   'market.history': {
     preconditions: [
-      '`--source auto` 在本地覆盖时读取本地日线；只有远端路径需要 API Key。可用 `--source local` 明确只读本地数据。',
+      '`--source auto` 在本地覆盖时读取本地日线；远端路径先用 `auth status` 复用当前启用的 OAuth 或 API Key。可用 `--source local` 明确只读本地数据。',
     ],
   },
   'fund.indicators-line': {
@@ -367,18 +446,23 @@ const localCommandDetails = {
   'data.init': {
     exampleArgs: '--kline <kline.parquet> --events <events.parquet>',
     preconditions: [
-      '远端初始化需要 API Key，先按 shared 复用已有凭据来源；本地文件导入无需远端认证。',
+      '远端初始化先通过 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。本地文件导入无需远端认证。',
       '本地文件导入必须同时提供 `--kline` 和 `--events`。',
+      '远端全量初始化包含下载、导入和复权重建；使用可等待全部子进程的前台执行器，超时不少于 15 分钟。下载完成不表示命令已结束或数据库已解锁。',
+      '仅在退出码 0 且 JSON 信封 `ok=true` 后，才对同一 `--db` 继续状态、行情或 SQL 查询。',
     ],
     parameters: [
       '`--kline <path>` 与 `--events <path>` 成对出现；可选 `--symbols <path>`。',
-      '省略本地文件时从远端 Market Dump 初始化，使用全局 `--profile` / `--api-key-stdin`。',
+      '省略本地文件时从远端 Market Dump 初始化，使用当前全局凭据或本次显式 `--api-key-stdin`。',
     ],
-    errors: ['只给 `--kline` 或只给 `--events` 会失败；两者必须成对。'],
+    errors: [
+      '只给 `--kline` 或只给 `--events` 会失败；两者必须成对。',
+      '执行器超时或非零退出时，检查锁文件或错误中的存活 PID；PID 仍存活则继续等待，不得在该 DB 上继续执行或删除活锁。用户明确取消时才终止对应进程。',
+    ],
   },
   'data.sync': {
     preconditions: [
-      '需要 API Key，先按 shared 复用已有凭据来源。auth status 仅检查系统凭据库，configured=false 不代表环境变量或 stdin 凭据缺失。',
+      '需要当前可用凭据，先按 shared 查看只读 auth status，或提供本次显式 Key。',
       '命令会持有数据锁，避免并发写库。',
     ],
     parameters: ['使用全局 `--db` 指定库路径；默认路径来自平台数据目录。'],
@@ -458,16 +542,34 @@ const localCommandDetails = {
 };
 
 const sharedReferenceFiles = {
+  'query-worker.md': `# 本地查询 worker
+
+现有远端命令默认透明复用当前系统用户、构建和环境的本地worker。首次按需启动，后续命令复用模块与HTTP连接，空闲约120秒退出；每条请求重新读取配置和凭据。帮助、认证、维护和数据库命令在前台；market history显式--source remote可复用。
+
+\`\`\`bash
+hithink-finance worker status --format json
+hithink-finance worker stop --format json
+\`\`\`
+
+status只读、不启动worker、不联网。state=running表示可连接；absent表示没有当前兼容实例；starting/unreachable/unavailable的running=null表示尚未确认；stopping等待现有任务完成。stop作用于当前兼容实例。进程环境HITHINK_FINANCE_NO_WORKER=1使用普通路径。
+
+CA/OpenSSL等相对进程路径按调用目录解析；自定义Node加载器等目录敏感配置按目录隔离。依赖声明与shrinkwrap参与构建标识；修改依赖后运行npm run build，使旧worker与新构建隔离。
+
+启动/握手失败且任务未发送时使用普通路径。发送后断线返回WORKER_RESULT_UNKNOWN，不自动重放，应检查输出文件后明确重试。WORKER_BUSY表示队列满或正在停止。请求期限包含排队，Ctrl+C取消当前任务。CLI_BUILD_NOT_READY表示本地构建未完成，应先成功运行npm run build。
+`,
   'global-rules.md': `# 全局规则
 
 ## 前置条件
 
-- 同会话首次使用或版本变化时运行 \`hithink-finance version --format json\`、\`hithink-finance capabilities --format json\`；同版本已读取的 shared 和目标 schema 可复用。
-- 机器读取必须显式使用 \`--format json\`；需要表格给人看时才用 \`table\`。
-- \`--output <path>\` 只在声明该参数的具体命令上使用；远端能力命令会把完整 JSON envelope 写入文件，本地 \`db export\` / \`market panel\` 会写数据文件。它不是全局参数。
+- 宿主依据内置 Skill 的 description 直接选择业务域。选定命令后按需读取目标 reference 与 schema；需要发现未知命令时再运行 \`capabilities\`。同版本已读取的规则和目标 schema 可复用。
+- 远端取数逐命令透明复用本地worker，空闲约120秒退出；认证、维护和数据库命令在前台。状态/停止/普通路径及不确定结果处理见 [本地查询worker](query-worker.md)。
+- 默认 auto 在终端显示按宽度排版的表格，管道输出紧凑 JSON 信封；机器读取显式使用 \`--format json\`（两空格缩进）或 \`--format ndjson\`（每次命令一个单行信封，数组保留在 data 内）。
+- \`--format table\` 使用业务默认列、数值右对齐和宽屏/窄屏布局；数据列表默认预览20条，\`--max-rows N\` 控制预览（0为本次全部），\`--columns a,b\` 按原始字段选列（\`*\`为全部）。这些选项仅影响终端表格；JSON/NDJSON和导出保持完整。
+- \`--output <path>\` 只用于声明该参数的命令。远端默认保存完整紧凑JSON信封；\`--file-format ndjson|csv\` 将本次结果逐行导出，stdout报告路径/格式/数量。一次命令不自动翻页。CSV空值为空单元格、嵌套值为JSON字符串；NDJSON保留类型和嵌套结构。db export/market panel仍按各自文件格式契约执行。
 
 ## 输出契约
 
+- \`auth status\` 用退出码表达连接状态：已连接退出 0，未连接退出 3；两者均在 stdout 返回 \`ok=true\`，读取 \`data.connected\`。读取或存储失败时，从 stderr 的 \`ok=false\` 信封读取 \`error\`。
 - 命令执行成功以进程退出码 0 和 \`ok: true\` 为准；业务验收还应检查命令结果，例如质量检查的 \`data.ok\`、目标窗口、样本和行数。
 - 错误以非 0 退出码和 \`ok: false\` 为准；读取 \`error.code\`、\`error.category\`、\`error.hint\`。
 - 需要诊断时使用 \`--debug\`；已脱敏的 request ID 与堆栈位于 \`meta.diagnostics\`，非预期内部错误的预填问题链接位于 \`error.report_url\`。
@@ -482,43 +584,8 @@ const sharedReferenceFiles = {
 - 最终回答只报告输出路径、行数、时间窗口、命令摘要和必要字段名。
 - 下游需要数据时让 pandas/notebook/脚本读取落盘文件。
 `,
-  'auth-and-config.md': `# 认证和配置
-
-## 前置条件
-
-- CLI 依次使用显式安全输入、进程环境变量 \`HITHINK_FINANCE_API_KEY\`、所选 profile 的系统凭据库。已有来源可用时直接复用。
-- 若统一 Key 保存在用户级 \`hithink-finance/credentials.env\`，由 Agent 安全读取并注入本次进程环境或 stdin；CLI 不自动读取该文件。Windows 位于 \`%APPDATA%\` 下，macOS 位于 \`~/Library/Application Support/\` 下，Linux 位于 \`$XDG_CONFIG_HOME\`（默认 \`~/.config\`）下。
-- API Key 获取地址为 https://fuyao.aicubes.cn/admin/；交互式用户可运行 \`hithink-finance auth login\`，CLI 会说明用途并隐藏输入。
-- 用户可以为了便利把 Key 提供给 Agent 上下文；Agent 不复述，并提示聊天平台可能保留消息记录。不要把密钥写入项目配置、日志、Git、Markdown 或其他可共享内容。
-
-## 命令
-
-\`\`\`bash
-hithink-finance auth login --api-key-stdin --format json
-hithink-finance auth login
-hithink-finance auth status --format json
-hithink-finance auth logout --format json
-hithink-finance config show --format json
-\`\`\`
-
-## 参数选择策略
-
-- 交互式终端可用 \`auth login\` 隐藏输入。
-- 如果 \`auth login\` 提示已登录，需要切换 API Key 时运行 \`auth login --replace\`；Agent/CI 使用 \`auth login --api-key-stdin --replace\`，无需先删除旧凭据。
-- Agent/CI 优先用 \`--api-key-stdin\` 或 \`HITHINK_FINANCE_API_KEY\`。
-- \`--api-key <value>\` 仅为旧脚本兼容保留，已从帮助中隐藏且会输出弃用警告；不要在新调用中使用。
-- \`auth status\` 的 \`configured\` 仅表示系统凭据库中是否存有 Key；false 不能否定环境变量或 stdin，true 也不是服务验权结果。
-- 多套持久化凭据使用全局 \`--profile <name>\`；进程环境变量优先于 profile 的系统凭据。全部来源缺失时才引导登录。
-- \`config show\` 只显示非敏感项；不要期待它返回 API Key。
-
-## 常见错误
-
-- \`AUTH_API_KEY_MISSING\`：运行 \`auth login\` 或设置 \`HITHINK_FINANCE_API_KEY\`。
-- \`CLI_MISSING_ARGUMENT\`：非交互场景使用 \`auth login --api-key-stdin\`，不要把 API Key 写入对话或日志。
-- \`CLI_CONFLICTING_ARGUMENTS\`：不要同时传 \`--api-key\` 和 \`--api-key-stdin\`。
-- \`CLI_STDIN_TOO_LARGE\`：缩小 stdin 输入；API Key 上限 16 KiB，批量代码上限 1 MiB。
-- \`CONFIG_NOT_FOUND\`：\`--config\` 或 \`HITHINK_FINANCE_CONFIG\` 指定的文件必须存在；修正路径或移除显式设置。
-`,
+  'auth-and-config.md':
+    '# 认证和配置\n\nCLI 默认推荐 OAuth。先运行 `auth status --format json` 复用当前有效凭据；首次登录使用 `auth login --method oauth`。已连接时沿用当前方式，OAuth 失效时重新授权；用户明确选择 API Key 时使用对应的登录与配置流程。\n\n同一系统用户的终端、Agent 与各安装副本共享一套认证状态。分别保存 OAuth 和 API Key，当前只启用一种；成功登录保存并启用新凭据。\n\n## 命令\n\n```bash\nhithink-finance auth status --format json\nhithink-finance auth login --method oauth\nhithink-finance auth login --method api-key --api-key-stdin --format json\nhithink-finance auth use api-key\nhithink-finance auth use oauth\nhithink-finance auth logout\nhithink-finance auth logout --all\nhithink-finance config show --format json\n```\n\n- 用户选择 API Key 时，在 https://fuyao.aicubes.cn/admin/ 获取。交互隐藏输入使用 `auth login --method api-key`。新 Key 远端验证成功后才保存；`--replace` 继续接受。\n- OAuth 登录默认连接生产认证服务。宿主使用 `auth login --method oauth --background --no-browser`，就绪后输出裸 HTTPS URL，再轮询本地 status。\n- `auth status` 展示连接状态、当前方式及可用凭据；`--debug` 提供附加诊断。状态检查不联网、不导入环境变量、不创建文件或刷新令牌。`connected` 表示本地存在可使用或可安全续期的当前凭据，不代表实时远端验权。\n- 业务命令显式 `--api-key-stdin` 仅覆盖本次请求，不要求持久存储可用。隐藏的兼容 `--api-key <value>` 会发出弃用警告。\n- `HITHINK_FINANCE_API_KEY` 仅在首次初始化且没有已存旧 Key 时导入一次；后续改变环境变量或退出均不自动导入。需要更新时使用登录命令。\n- 普通业务首次初始化自动迁移旧 default Key 或唯一条目。OAuth 登录初始化不探测旧系统凭据库；其后需要导入旧 Key，或遇多候选/旧非默认 profile，使用 `auth migrate --legacy-profile <name>` 一次性选择，再移除旧 profile 设置。\n- \`auth status\` 已连接时退出 0，未连接时退出 3；stdout 保留 \`ok=true\` 状态信封，读取 \`data.connected\`。状态检查只读本地凭据。\n- OAuth 失败保持当前选择。权限错误不刷新；刷新结果未知时不重复发送旧 RT，仍有效 AT 可继续使用，到期后重新登录。\n- 凭据根使用 OS 用户主目录 `.hithink-finance/auth/production/`，与 npm 安装及数据配置路径独立。统一采用操作系统私有权限保护的明文凭据文件。存储诊断使用 `auth status --debug --format json`。\n- `logout` 清当前凭据，`--all` 清两类凭据。OAuth 本地退出先提交，远端撤销失败会明确报告；已签名下载链接按自身期限失效。\n- Agent 从用户级 `credentials.env` 读取 Key 时，通过 stdin 显式登录或仅用于本次请求。不要把 Key、Token、授权码或完整授权 URL 写入日志、Markdown、Git 或对话。\n- 共享安装副本须升级到支持全局格式的版本。认证目录需位于可靠本地文件系统。\n\n- 旧格式使用 `auth migrate` 一次迁入；迁移后正常请求只访问文件，旧安装副本须一起升级。运行中的旧登录/刷新须结束后再迁移。\n\n## 错误与恢复\n\n- `AUTH_LOGIN_REQUIRED`：为当前方式重新登录。\n- `AUTH_MIGRATION_REQUIRED`：运行 `auth migrate`；多份旧条目使用 `--legacy-profile` 明确选择。\n- `AUTH_REFRESH_IN_PROGRESS`：稍后重试；`AUTH_REFRESH_UNCERTAIN`：有效 AT 到期后重新登录。\n- `AUTH_CREDENTIAL_STORE_UNAVAILABLE`：旧凭据迁入时解锁原存储；`AUTH_STORAGE_PERMISSIONS`：修复凭据文件权限。显式 Key 仍可用于本次业务请求。\n- `AUTH_REVOCATION_INCOMPLETE`：本地已退出，远端撤销未确认。\n- `CLI_MISSING_ARGUMENT`：非交互 Key 登录使用 `--api-key-stdin`。\n- `CLI_CONFLICTING_ARGUMENTS`：选择一种认证方式和一种 Key 输入。\n- `CLI_STDIN_TOO_LARGE`：API Key 输入上限 16 KiB，批量代码上限 1 MiB。\n- `CONFIG_NOT_FOUND`：修正显式配置路径或移除无效设置。\n',
   'lifecycle.md': `# 生命周期命令
 
 ## 命令
@@ -562,7 +629,7 @@ hithink-finance skills remove --format json
 
 ## 参数选择策略
 
-- 首次安装和升级默认读取已保存策略：\`auto\` 仅检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy 与 QClaw；仅存在历史 \`skills\` 目录不算客户端证据，也不会创建未检测到的根目录。
+- 内容来自 CLI 包内的 Skills 与 manifest，发布到用户级共享目录，再链接到选定 Agent。\n- 首次安装和升级默认读取已保存策略：\`auto\` 仅检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy 与 QClaw；仅存在历史 \`skills\` 目录不算客户端证据，也不会创建未检测到的根目录。
 - 安装时可用 \`HITHINK_FINANCE_SKILLS_AGENTS=auto\` 或逗号分隔的目标替换策略。安装后 \`sync --agent <name>\` 是追加，不会移除已选目标；\`sync --agent auto\` 恢复自动检测并保留显式目标。
 - \`status\` 同时报告包内 manifest、共享内容、策略和逐目标文件验证。\`ready\` 只表示文件和链接/副本有效，不代表客户端已经加载；必要时新建会话。
 - 默认在 CLI 用户级数据目录维护一份共享内容，并在每个目标的各 Skill 目录建立链接；Windows 优先目录 junction，其他平台使用目录 symlink。\`--copy\` 只用于显式目标不兼容链接时，并保存该目标的复制模式以便升级继续更新。
@@ -573,7 +640,7 @@ hithink-finance skills remove --format json
 ## 常见错误
 
 - npm 禁用生命周期脚本时，安装完成后运行 \`hithink-finance skills sync --repair --format json\`；直接 \`npm uninstall -g\` 不能保证清理托管链接，先运行 \`hithink-finance skills remove\`。
-- 目标冲突、链接权限或客户端不发现链接时，先运行 \`skills status --format json\`；确认客户端支持后可对该单一目标重新执行 \`sync --agent <name> --copy\`。
+- 目标冲突、链接权限或客户端不发现链接时，先运行 \`skills status --format json\`；确认客户端不兼容链接后可对该单一目标重新执行 \`sync --agent <name> --copy\`。
 - 不要手工删除或覆盖用户自建 Skill、未知同名目录或非 \`hithink-finance-*\` 内容。
 `,
 };
@@ -631,6 +698,18 @@ function schemaId(capability) {
 }
 
 function windowText(window, id) {
+  if (id === 'index.history' || id === 'index.history-batch')
+    return '目前仅支持查询近 5 年的指数历史数据；时间参数按接口契约提供。';
+  if (id.endsWith('-batch'))
+    return id === 'market.history-batch'
+      ? '单次窗口最多 10 个日历年，支持 1d/1w/1mo；超限需缩小窗口。'
+      : id === 'fund.history-batch'
+        ? '单次窗口最多 5 个日历年，固定 1d；实际行情可用范围为近 5 年。'
+        : '所有代码共享 period 以及最近 N 期或起止区间；两种模式互斥。';
+  if (id === 'news.anomaly-analysis')
+    return '原起止日期传给服务；按标的最多 365 天、全量最多 30 天由服务截取，以 was_truncated 判断。四个时间字段单位待核实，保持原值；成功空列表不能区分真实无数据与上游降级。';
+  if (['special.limit-up-statistics', 'special.dragon-tiger-stock-institution'].includes(id))
+    return '查询最近一年内的交易日；省略日期由服务解析最近可用交易日。';
   if (id === 'market.calendar')
     return '固定返回 Asia/Shanghai 今日至一年前的交易日序列，无日期参数；无法通过拆分请求获取更早范围。';
   return {
@@ -642,7 +721,23 @@ function windowText(window, id) {
   }[window];
 }
 
-function pagingText(paging, pagingEnd) {
+function pagingText(paging, pagingEnd, id) {
+  if (id === 'news.topic-hot-list')
+    return '首屏省略 --cursor；后续原样回传 next_cursor，以 has_more=false 判断结束，每次命令只请求一页。';
+  if (id === 'news.stock-timeline-list')
+    return '首屏 --offset first，后续原样回传响应 offset，以 has_more=false 判断结束；--size 可省略。每次命令只请求一页。';
+  if (id === 'news.flash-list' || id === 'news.flash-refresh')
+    return 'seq 使用十进制字符串；首屏列表传 0，后续传调用方指定序号。当前只承诺单次查询，不推导 total、has_more 或刷新边界。刷新 create_time_ms 必须能整除 1000。';
+  if (id === 'ipo.hk-applications')
+    return '使用 `--page` 逐页查询，页码从 1 开始；分页状态以响应 pagination.has_next 为准。';
+  if (
+    [
+      'special.dragon-tiger-department-history',
+      'special.abnormal-monitor',
+      'special.auction-opportunities',
+    ].includes(id)
+  )
+    return '使用 `--page` + `--size` 请求指定页，以 pagination.has_next 判断结束；保留记录顺序和空值。';
   if (paging === 'offset' && pagingEnd === 'has-more') {
     return '使用 `--limit` + `--offset` 游标翻页；全量抓取时循环到响应 `has_more=false`，不要依赖本页条数或不存在的 total。';
   }
@@ -657,7 +752,7 @@ function pagingText(paging, pagingEnd) {
 function optionRows(capability) {
   const options = effectiveOptions(capability);
   if (options.length === 0)
-    return '| 参数 | 必填 | 说明 |\n| --- | --- | --- |\n| 无 | 否 | 运行前仍可用全局参数 `--format json`、`--profile`、`--db`；`--output` 不是全局参数。 |';
+    return '| 参数 | 必填 | 说明 |\n| --- | --- | --- |\n| 无 | 否 | 运行前仍可用全局参数 `--format json`、`--db`；`--output` 不是全局参数。 |';
   return [
     '| 参数 | 必填 | 说明 |',
     '| --- | --- | --- |',
@@ -677,11 +772,7 @@ function optionRows(capability) {
 function effectiveOptions(capability) {
   const options = 'options' in capability ? [...capability.options] : [];
   if ('endpoint' in capability) {
-    options.push({
-      flags: '--output <path>',
-      description: 'write the full JSON response envelope to a file',
-      type: 'string',
-    });
+    options.push(...remoteOutputOptions);
   }
   return options;
 }
@@ -706,8 +797,14 @@ function referenceContent(capability) {
     capability.id !== 'valuation.snapshot' &&
     capability.options.some((option) => option.flags.startsWith('--thscodes '))
   ) {
+    const sharedRequired = capability.id.endsWith('-batch')
+      ? capability.options
+          .filter((option) => option.required === true && !option.flags.startsWith('--thscodes '))
+          .map((option) => optionValue(option.flags))
+          .join(' ')
+      : '';
     examples.push(
-      `hithink-finance ${capability.command.join(' ')} --codes-file codes.txt --output result.json --format json`,
+      `hithink-finance ${capability.command.join(' ')} --codes-file codes.txt${sharedRequired ? ` ${sharedRequired}` : ''} --output result.json --format json`,
     );
   }
   return `# \`${commandTitle(capability.command)}\`
@@ -715,12 +812,12 @@ function referenceContent(capability) {
 ## 前置条件
 
 ${lines([
-  '按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。',
+  '读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。',
   `首次执行或版本变化时用 \`hithink-finance schema ${schemaId(capability)} --format json\` 确认参数，未说明的组合规则再看命令 \`--help\`。`,
   ...(isRemote
     ? capability.id === 'market.history'
       ? []
-      : ['远端调用需要 API Key，先按共享规则复用已有凭据。']
+      : ['远端调用先用 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。']
     : []),
   ...(detail.preconditions ?? []),
 ])}
@@ -739,7 +836,7 @@ ${isRemote ? optionRows(capability) : lines(detail.parameters ?? ['读取 schema
 
 ## 窗口与分页
 
-${isRemote ? lines([windowText(capability.window, capability.id), pagingText(capability.paging, capability.pagingEnd)]) : lines(['本地命令按目标库执行；查询大结果使用 `db export` 或 `market panel --output`。'])}
+${isRemote ? lines([windowText(capability.window, capability.id), pagingText(capability.paging, capability.pagingEnd, capability.id)]) : lines(['本地命令按目标库执行；查询大结果使用 `db export` 或 `market panel --output`。'])}
 
 ## 常见错误
 
@@ -747,7 +844,7 @@ ${lines([
   ...(isRemote
     ? [
         '参数校验失败时按 `error.hint` 修正，不要猜字段名。',
-        '认证失败时不要重试刷屏；先处理 API Key。',
+        '认证失败时先用 `auth status` 检查当前方式，再按 shared 的认证流程恢复。',
       ]
     : []),
   ...(detail.errors ?? []),
@@ -756,6 +853,13 @@ ${lines([
 ## 批量操作说明
 
 ${lines([
+  ...(capability.id.endsWith('-batch')
+    ? [
+        '每批最多 10 个原始代码；先检查上限再规范化、稳定去重，按服务返回顺序保留代码分组。',
+        'data.item 每组含 thscode、timestamp 和原记录数组；合法空组保留，无效标的由服务省略，调用成功时退出 0。CSV/NDJSON 每行导出一个代码分组。',
+        '每条命令发送一个批量查询；传输或业务错误由调用方处理。OAuth 仍沿用已确认鉴权拒绝后的单次凭据恢复。',
+      ]
+    : []),
   ...(capability.command[0] === 'data'
     ? ['维护操作按目标库逐项执行，并检查每个结果。']
     : ['批量或全量请求必须落盘，最终只报告路径、行数和窗口。']),
@@ -763,11 +867,13 @@ ${lines([
   capability.id !== 'valuation.snapshot' &&
   capability.options.some((option) => option.flags.startsWith('--thscodes '))
     ? '支持 `--codes-file` 或 `--codes-stdin` 读取多 thscode；不要同时用 `--api-key-stdin` 和 `--codes-stdin`。'
-    : capability.id === 'valuation.snapshot'
-      ? '通过必填的 `--thscodes` 传入最多 100 个原始 token；大结果用 `--output` 落盘。'
-      : capability.command[0] === 'data'
-        ? '确认目标路径与影响；不要从只读查询意图推断清理、迁移或修复授权。'
-        : '如果需要多标的循环，逐批执行并记录每批参数；不要把完整结果塞进上下文。',
+    : capability.id === 'fund.snapshot'
+      ? '通过原 --thscode 传最多 100 个原始代码的 CSV；先检查上限再规范化、稳定去重。服务返回平铺报价并省略未知、不支持或缺报价目标。'
+      : capability.id === 'valuation.snapshot'
+        ? '通过必填的 `--thscodes` 传入最多 100 个原始 token；大结果用 `--output` 落盘。'
+        : capability.command[0] === 'data'
+          ? '确认目标路径与影响；不要从只读查询意图推断清理、迁移或修复授权。'
+          : '如果需要多标的循环，逐批执行并记录每批参数；不要把完整结果塞进上下文。',
 ])}
 `;
 }
@@ -786,30 +892,46 @@ ${config.identity}
 
 | 条件 | 操作 |
 | --- | --- |
-| 第一次接触此 CLI 或怀疑版本漂移 | 运行 \`hithink-finance version --format json\` 和 \`hithink-finance capabilities --format json\` |
+| 第一次接触此 CLI 或怀疑版本漂移 | 运行 \`hithink-finance version --format json\`；需要发现未知命令时再读取 \`capabilities\` |
 | 需要机器读取 | 始终加 \`--format json\` |
 | 结果可能很大 | 使用命令声明的 \`--output <path>\` 落盘；远端 stdout 只返回摘要 |
-| 需要远端同花顺金融数据服务 | 先确认 \`auth status\` 或准备 \`HITHINK_FINANCE_API_KEY\` / \`--api-key-stdin\` |
+| 需要远端同花顺金融数据服务 | 先用 \`auth status\` 复用当前有效凭据；首次登录默认推荐 OAuth |
 
 ## 快速决策
 
 ${table([['用户意图', '首选命令 / 路由'], ['---', '---'], ...config.decisions])}
+
+## 业务辅助选路
+
+明确的业务请求由宿主依据领域 Skill 的 description 直接选择。需要区分范围或选择其他业务域时，用下表补充定位；随后读取该领域 Skill 和目标命令 reference。
+
+${table([
+  ['任务范围', '领域 Skill'],
+  ['---', '---'],
+  ...Object.entries(domainConfigs)
+    .filter(([domain]) => domain !== 'shared')
+    .map(([domain, entry]) => [
+      entry.identity,
+      `[hithink-finance-${domain}](../hithink-finance-${domain}/SKILL.md)`,
+    ]),
+])}
 
 ## References
 
 | 需要了解 | 读取 |
 | --- | --- |
 | JSON 输出、大结果、安全规则 | [global-rules.md](references/global-rules.md) |
-| API Key、profile、配置优先级 | [auth-and-config.md](references/auth-and-config.md) |
+| 全局凭据、一次性迁移、配置 | [auth-and-config.md](references/auth-and-config.md) |
 | version、doctor、update、uninstall | [lifecycle.md](references/lifecycle.md) |
 | skills status/sync/remove | [skills-management.md](references/skills-management.md) |
+| 查询worker状态/停止、启动与失败处理 | [query-worker.md](references/query-worker.md) |
 
 ## 权限表
 
 | 能力 | 凭据 |
 | --- | --- |
-| 本地 data/db/market panel | 通常不需要 API Key，除非需要同步或初始化远端 dump |
-| symbol/market remote/special/financials/index/fund/futures/options/valuation | 需要统一 API Key |
+| 本地 data/db/market panel | 本地读取和导出通常无需认证；远端初始化或同步使用当前有效凭据 |
+| symbol/market remote/special/ipo/news/financials/index/fund/futures/options/valuation | 使用当前启用的 OAuth 或 API Key |
 | skills/update/uninstall | 需要本机文件系统权限；不要写全局非 CLI 管理目录 |
 
 ## 边界声明
@@ -857,8 +979,8 @@ ${config.identity}
 
 | 条件 | 操作 |
 | --- | --- |
-| 首次使用本域 | 读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用 |
-| 首次执行或版本变化 | 查看 \`capabilities --format json\` 与目标 \`schema <id> --format json\`；组合规则不明确时查看 \`--help\` |
+| 需要认证、共用输出或维护指引 | 按需读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用 |
+| 选定命令或版本变化 | 用目标 \`schema <id> --format json\` 核对参数；命令未知时再读取 \`capabilities\` |
 | 需要执行下表某个命令 | 先读取对应 reference 文件，不要只凭命令名猜参数 |
 | 全市场、分页、多标的或长区间 | 使用命令声明的 \`--output <path>\` 落盘，只报告摘要 |
 
@@ -893,7 +1015,7 @@ function researchReference() {
 
 ## 前置条件
 
-- 先读取 [hithink-finance-shared](../../hithink-finance-shared/SKILL.md)。
+- 需要认证、共用输出或维护规则时，读取 [hithink-finance-shared](../../hithink-finance-shared/SKILL.md)。
 - 确认用户要的是中立研究数据、统计或可复现实证输入，不是投资建议。
 - 先用文件系统确认用户指定的数据库文件存在，并固定绝对路径。文件不存在时报告缺失；初始化由 data Skill 按用户授权执行。
 - 文件存在后运行带同一 \`--db\` 的 \`data status\`，再运行 \`data migrate\` 的默认计划。版本不兼容或 \`data.versions\` 非空时停止研究前置调用，说明需要迁移；计划不带 \`--apply\`。

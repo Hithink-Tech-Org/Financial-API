@@ -70,7 +70,7 @@ test('re-signs once after a transient dump failure and downloads atomically', as
   try {
     const result = await fetchFuyaoDump({
       baseUrl: 'https://fuyao.example',
-      apiKey: 'secret',
+      auth: { method: 'api-key', apiKey: 'secret', source: 'explicit', profile: 'default' },
       kind: 'daily-k',
       cacheDir: root,
       fetch,
@@ -80,12 +80,12 @@ test('re-signs once after a transient dump failure and downloads atomically', as
     expect(result.sha256).toBe(createHash('sha256').update('parquet-bytes').digest('hex'));
     expect(await readFile(result.path, 'utf8')).toBe('parquet-bytes');
     expect(fetch).toHaveBeenCalledTimes(3);
-    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
-      'X-THS-Skill-Id': 'Hithink-Finance-CLI',
-    });
-    expect(fetch.mock.calls[1]?.[1]?.headers).toMatchObject({
-      'X-THS-Skill-Id': 'Hithink-Finance-CLI',
-    });
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('X-THS-Skill-Id')).toBe(
+      'Hithink-Finance-CLI',
+    );
+    expect(new Headers(fetch.mock.calls[1]?.[1]?.headers).get('X-THS-Skill-Id')).toBe(
+      'Hithink-Finance-CLI',
+    );
     expect(fetch.mock.calls[2]?.[1]).toBeUndefined();
     expect(String(fetch.mock.calls[1]?.[0])).not.toContain('secret');
   } finally {
@@ -109,7 +109,7 @@ test('reports byte progress from the streamed dump response', async () => {
   try {
     await fetchFuyaoDump({
       baseUrl: 'https://fuyao.example',
-      apiKey: 'secret',
+      auth: { method: 'api-key', apiKey: 'secret', source: 'explicit', profile: 'default' },
       kind: 'daily-k',
       cacheDir: root,
       fetch,
@@ -163,12 +163,14 @@ test('finishes factors, release metadata, and quality checks before reporting la
         return Response.json({
           code: 0,
           data: { presigned_url: 'https://objects.example/releases/kline-r2/parquet' },
+          message: 'ok',
         });
       }
       if (url.includes('/adjustment-factors/download-url')) {
         return Response.json({
           code: 0,
           data: { presigned_url: 'https://objects.example/releases/events-r2/parquet' },
+          message: 'ok',
         });
       }
       return new Response(url.includes('kline-r2') ? klineBytes : eventBytes);
@@ -178,7 +180,7 @@ test('finishes factors, release metadata, and quality checks before reporting la
     await expect(
       syncDataFromFuyao(observeCancelledImport(target.connection, controller, qualityChecked), {
         baseUrl: 'https://fuyao.example',
-        apiKey: 'test-key',
+        auth: { method: 'api-key', apiKey: 'test-key', source: 'explicit', profile: 'default' },
         cacheDir: path.join(root, 'cache'),
         now: new Date('2025-01-04T00:00:00Z'),
         signal: controller.signal,

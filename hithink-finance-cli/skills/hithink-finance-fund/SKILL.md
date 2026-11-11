@@ -1,6 +1,6 @@
 ---
 name: hithink-finance-fund
-description: '用于 Agent 通过 hithink-finance CLI 查询基金档案、公司、经理、财务、诊断、资讯、募集、持仓、净值、收益、持有人结构、在线回测、通用指标、QDII 额度、ETF/LOF 快照和 ETF 历史；A 股行情转 hithink-finance-market，基金代码搜索转 hithink-finance-symbol。'
+description: '通过 hithink-finance CLI 查询基金档案、公司和经理、持仓、净值、收益、基金财务与资讯、在线回测、指标及 QDII 额度；查询 ETF/LOF 快照和 ETF 历史行情。'
 ---
 
 # hithink-finance-fund
@@ -9,35 +9,36 @@ description: '用于 Agent 通过 hithink-finance CLI 查询基金档案、公�
 
 ## 前置条件表
 
-| 条件                         | 操作                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| 首次使用本域                 | 读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用                         |
-| 首次执行或版本变化           | 查看 `capabilities --format json` 与目标 `schema <id> --format json`；组合规则不明确时查看 `--help` |
-| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                                     |
-| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                                                   |
+| 条件                         | 操作                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| 需要认证、共用输出或维护指引 | 按需读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用 |
+| 选定命令或版本变化           | 用目标 `schema <id> --format json` 核对参数；命令未知时再读取 `capabilities`    |
+| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                 |
+| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                               |
 
 ## 快速决策
 
-| 用户意图                       | 首选命令 / 路由                                                             |
-| ------------------------------ | --------------------------------------------------------------------------- |
-| 基金档案                       | `fund profile`                                                              |
-| 基金持仓                       | `fund holdings`                                                             |
-| 基金净值                       | `fund nav`                                                                  |
-| 基金区间收益                   | `fund returns`                                                              |
-| 基金持有人结构                 | `fund holders`                                                              |
-| 基金在线回测                   | 先用 `fund backtest-indicators` 获取指标规则，再调用 `fund backtest-result` |
-| 基金画线/表格指标              | `fund indicators-line` / `fund indicators-table`                            |
-| QDII 额度汇总/列表             | `fund quota-summary` / `fund quota-list`                                    |
-| 基金公司详情                   | `fund company-detail`                                                       |
-| 基金经理资料/经历/业绩/风格    | `fund manager-detail/manager-experience/manager-performance/manager-style`  |
-| 基金财务指标/利润表/资产负债表 | `fund financial-indicators/income-statements/balance-sheets`                |
-| 基金诊断                       | `fund diagnostics`                                                          |
-| 基金资讯                       | `fund news`                                                                 |
-| 在售或待售基金                 | `fund offerings`                                                            |
-| 历史股票/债券持仓              | 先用对应 `report-dates`，再调用 `stock-history` 或 `bond-history`           |
-| ETF/LOF 快照                   | `fund snapshot`                                                             |
-| ETF 历史日线                   | `fund history`                                                              |
-| 基金代码或名称搜索             | 切到 `hithink-finance-symbol`                                               |
+| 用户意图                       | 首选命令 / 路由                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| 基金档案                       | `fund profile`                                                                       |
+| 基金持仓                       | `fund holdings`                                                                      |
+| 基金净值                       | `fund nav`                                                                           |
+| 基金区间收益                   | `fund returns`                                                                       |
+| 基金持有人结构                 | `fund holders`                                                                       |
+| 基金在线回测                   | 先用 `fund backtest-indicators` 获取指标规则，再调用 `fund backtest-result`          |
+| 基金画线/表格指标              | `fund indicators-line` / `fund indicators-table`                                     |
+| QDII 额度汇总/列表             | `fund quota-summary` / `fund quota-list`                                             |
+| 基金公司详情                   | `fund company-detail`                                                                |
+| 基金经理资料/经历/业绩/风格    | `fund manager-detail/manager-experience/manager-performance/manager-style`           |
+| 基金财务指标/利润表/资产负债表 | `fund financial-indicators/income-statements/balance-sheets`                         |
+| 基金诊断                       | `fund diagnostics`                                                                   |
+| 基金资讯                       | `fund news`                                                                          |
+| 在售或待售基金                 | `fund offerings`                                                                     |
+| 历史股票/债券持仓              | 先用对应 `report-dates`，再调用 `stock-history` 或 `bond-history`                    |
+| ETF/LOF 快照                   | `fund snapshot`                                                                      |
+| ETF 历史日线                   | `fund history`                                                                       |
+| 多只场内基金行情               | `fund snapshot --thscode <CSV>` 最多 100 个原始代码；`fund history-batch` 最多 10 个 |
+| 基金代码或名称搜索             | 切到 `hithink-finance-symbol`                                                        |
 
 ## Shortcuts
 
@@ -55,6 +56,7 @@ description: '用于 Agent 通过 hithink-finance CLI 查询基金档案、公�
 | [fund drawdowns](references/fund-drawdowns.md)                       | Query fund drawdown periods                                                                                  |
 | [fund financial-indicators](references/fund-financial-indicators.md) | Query fund financial indicators                                                                              |
 | [fund history](references/fund-history.md)                           | Query forward-adjusted daily ETF price history                                                               |
+| [fund history-batch](references/fund-history-batch.md)               | Query forward-adjusted daily ETF price history for multiple thscodes                                         |
 | [fund holders](references/fund-holders.md)                           | Query fund holder structure by disclosure scope                                                              |
 | [fund holdings](references/fund-holdings.md)                         | Query fund portfolio holdings                                                                                |
 | [fund income-statements](references/fund-income-statements.md)       | Query fund income statements                                                                                 |
@@ -90,7 +92,7 @@ schema 提供当前命令选项；reference 补充业务参数关系和验收方
 
 ## 边界声明
 
-- 按基金查询的能力使用单个 `thscode` 唯一定位基金。
+- 基金详情按单个 `thscode` 定位；场内快照使用原 `--thscode` 接收最多 100 个原始代码的 CSV，并返回平铺报价。
 - 复杂对象和数组参数使用 JSON 字符串；绝对时间使用 Unix 毫秒，动态字段与局部空值保持原义。
 - `fund snapshot` 只支持 ETF/LOF；`fund history` 只支持 ETF、固定 `1d` 且窗口最多 5 年。
 - 基金数据不是投资建议，不要据此扩写买卖或收益承诺。

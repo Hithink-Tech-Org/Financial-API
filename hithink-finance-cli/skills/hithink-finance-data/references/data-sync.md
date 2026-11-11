@@ -2,9 +2,9 @@
 
 ## 前置条件
 
-- 按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。
+- 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema data.sync --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- 需要 API Key，先按 shared 复用已有凭据来源。auth status 仅检查系统凭据库，configured=false 不代表环境变量或 stdin 凭据缺失。
+- 需要当前可用凭据，先按 shared 查看只读 auth status，或提供本次显式 Key。
 - 命令会持有数据锁，避免并发写库。
 
 ## 命令

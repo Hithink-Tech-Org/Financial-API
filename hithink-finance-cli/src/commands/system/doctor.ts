@@ -7,14 +7,14 @@ import type { CliContext } from '../../cli/context.js';
 import { localizeText } from '../../cli/i18n.js';
 import { successEnvelope } from '../../contracts/envelope.js';
 import { CliError } from '../../contracts/errors.js';
-import type { ApiKeyAuthProvider } from '../../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../../infrastructure/credentials/global-provider.js';
 import type { PlatformPaths } from '../../infrastructure/filesystem/platform-paths.js';
 import { readBundledSkillsStatus } from '../../infrastructure/skills/status.js';
 import { renderResult } from '../../output/renderer.js';
 
 interface DoctorDependencies {
   metadata: PackageMetadata;
-  authProvider: ApiKeyAuthProvider;
+  authProvider: GlobalAuthProvider;
   packageRoot: string;
   platformPaths: PlatformPaths;
   resolvedConfig: ResolvedConfig;
@@ -29,12 +29,12 @@ async function fileExists(file: string): Promise<boolean> {
 }
 
 async function authenticationStatus(
-  authProvider: ApiKeyAuthProvider,
-  profile: string,
+  authProvider: GlobalAuthProvider,
 ): Promise<{ configured: boolean; source?: string; checkError?: string }> {
   try {
-    const session = await authProvider.resolve(profile);
-    return { configured: true, source: session.source };
+    const status = await authProvider.status();
+    if (status.storage.backend !== null) await authProvider.store.auditPermissions();
+    return { configured: status.connected, source: status.active_method };
   } catch (error) {
     if (error instanceof CliError && error.code === 'AUTH_API_KEY_MISSING') {
       return { configured: false };
@@ -77,7 +77,7 @@ async function duckdbStatus(): Promise<{ available: boolean; errorCode?: string 
 export async function collectDoctorReport(dependencies: DoctorDependencies): Promise<unknown> {
   const { metadata, authProvider, packageRoot, platformPaths, resolvedConfig } = dependencies;
   const [authentication, databaseExists, dataLock, duckdb, skills] = await Promise.all([
-    authenticationStatus(authProvider, resolvedConfig.profile),
+    authenticationStatus(authProvider),
     fileExists(resolvedConfig.dbPath),
     dataLockStatus(platformPaths.stateDir),
     duckdbStatus(),

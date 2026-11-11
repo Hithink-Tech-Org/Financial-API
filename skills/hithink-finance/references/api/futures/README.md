@@ -25,15 +25,6 @@
 | [期货分时](futures-prices.md#prices-intraday) | `GET /api/futures/prices/intraday` | 公开 |
 | [期货K线](futures-prices.md#prices-daily) | `GET /api/futures/prices/daily` | 公开 |
 
-## 交易日程
-
-交易日、交易时段与会话时间。
-
-| 需求 / 文档 | 接口或工具 | 使用范围 |
-| --- | --- | --- |
-| [期货交易日](calendar-trading-schedule.md) | `GET /api/futures/calendar/trading-schedule` | 公开 |
-| [期货交易时间轴](calendar-session-timeline.md) | `GET /api/futures/calendar/session-timeline` | 公开 |
-
 ## 持仓
 
 品种与公司、合约维度不同；日期查询和历史序列分别选择。

@@ -11,6 +11,7 @@
 
 | 需求 / 文档 | 接口或工具 | 使用范围 |
 | --- | --- | --- |
+| [同花顺新增概念](baseinfo-new-concepts.md) | `GET /api/a-share-index/baseinfo/new-concepts` | 端内专用，客户端可用 |
 | [同花顺指数列表](a-share-index.md#catalog-ths-index-list) | `GET /api/a-share-index/catalog/ths-index-list` | 公开 |
 | [同花顺指数成分股](a-share-index.md#constituents-ths-stock-list) | `GET /api/a-share-index/constituents/ths-stock-list` | 公开 |
 
@@ -22,3 +23,4 @@
 | --- | --- | --- |
 | [指数行情快照](a-share-index.md#prices-snapshot) | `GET /api/a-share-index/prices/snapshot` | 公开 |
 | [指数历史 K 线](a-share-index.md#prices-historical) | `GET /api/a-share-index/prices/historical` | 公开 |
+| [指数批量历史 K 线](a-share-index.md#prices-historical-batch) | `GET /api/a-share-index/prices/historical-batch` | 公开 |

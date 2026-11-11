@@ -1,4 +1,12 @@
 import { z, type ZodType } from 'zod';
+import {
+  newsArticleOutput,
+  newsFlashOutput,
+  newsNoticeOutput,
+  newsTopicOutput,
+  newsAnomalyOutput,
+  newsTimelineOutput,
+} from './news-output.js';
 
 export interface RemoteOptionDescriptor {
   flags: string;
@@ -25,6 +33,34 @@ export interface RemoteCapabilityDescriptor {
 }
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+const calendarDate = isoDate.refine((value) => {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}, 'expected a valid calendar date');
+const nonblank = z.string().refine((value) => value.trim().length > 0, 'expected non-empty text');
+const newsSegment = nonblank.refine((value) => !/[\\/]/u.test(value), 'expected one path segment');
+const newsSeq = z
+  .string()
+  .refine(
+    (value) => /^[0-9]+$/u.test(value) && BigInt(value) <= 9223372036854775807n,
+    'expected a decimal string within signed 64-bit range',
+  );
+const businessCodes = z.string().superRefine((value, context) => {
+  const tokens = value.split(',');
+  if (tokens.length > 50 || tokens.some((token) => !/^\d{6}\.(SH|SZ|BJ)$/iu.test(token.trim())))
+    context.addIssue({ code: 'custom', message: 'expected 1 to 50 A-share code tokens' });
+});
+const opportunityTypes = z
+  .string()
+  .refine(
+    (value) => value.split(',').every((token) => /^687(1[0-9]|2[0-7])$/u.test(token.trim())),
+    'expected opportunity types 68710 through 68727',
+  );
+const departmentId = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((value) => value.trim().length > 0);
 const aShareCode = z.string().regex(/^\d{6}\.(SH|SZ|BJ)$/iu);
 const indexCode = z.string().regex(/^\d{6}\.(SH|SZ|BJ|TI)$/iu);
 const commaCodes = z.string().min(1);
@@ -60,8 +96,24 @@ const derivativeList = z.string().superRefine((value, context) => {
     context.addIssue({ code: 'custom', message: 'list must contain 1 to 5 non-empty values' });
 });
 const record = z.record(z.string(), z.unknown());
-const itemOutput = z.object({ item: z.array(record) }).passthrough();
+const resultRecord = z.object({ thscode: z.string().nullable().optional() }).passthrough();
+const itemOutput = z.object({ item: z.array(resultRecord) }).passthrough();
 const objectOutput = z.object({}).passthrough();
+const businessPageOutput = z
+  .object({
+    item: z.array(
+      z.object({ thscode: z.string().nullable(), name: z.string().nullable() }).passthrough(),
+    ),
+    pagination: z
+      .object({
+        page: z.number().int(),
+        size: z.number().int(),
+        total: z.number().int().nullable(),
+        has_next: z.boolean(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
 const arrayOutput = z.array(z.unknown());
 
 function jsonString<T>(schema: z.ZodType<T>, field: string): z.ZodString {
@@ -221,7 +273,10 @@ const indexHistoryInput = z
     endMs: z.number().int().nonnegative(),
   })
   .strict()
-  .refine((value) => value.endMs >= value.startMs, { message: 'end-ms must be >= start-ms' });
+  .refine((value) => value.endMs >= value.startMs, { message: 'end-ms must be >= start-ms' })
+  .refine((value) => value.startMs >= recentIndexLowerBound(), {
+    message: 'index history is available for the recent five calendar years',
+  });
 
 const fundHistoryInput = z
   .object({
@@ -641,7 +696,7 @@ const derivativeIntradayInput = z
   .strict();
 const derivativeIntradayOptions: readonly RemoteOptionDescriptor[] = [thscodeOption, sessionOption];
 
-export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
+const baseRemoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
   {
     id: 'symbol.search',
     command: ['symbol', 'search'],
@@ -1024,7 +1079,7 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
       },
     ],
     paging: 'none',
-    window: 'ten-years',
+    window: 'five-years',
   },
   fundDetail('profile', 'Query fund profile detail', '/api/fund/profile/detail'),
   fundDetail('holdings', 'Query fund portfolio holdings', '/api/fund/portfolio/holdings'),
@@ -1108,12 +1163,12 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     description: 'Query exchange-traded fund market snapshot',
     endpoint: '/api/fund/market/snapshot',
     method: 'GET',
-    inputSchema: z.object({ thscode: fundCode }).strict(),
+    inputSchema: z.object({ thscode: batchCodes(100) }).strict(),
     outputSchema: itemOutput,
     options: [
       {
         flags: '--thscode <code>',
-        description: 'single ETF or LOF thscode',
+        description: 'comma-separated ETF/LOF thscodes (1-100 raw tokens)',
         type: 'string',
         required: true,
       },
@@ -2009,13 +2064,18 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     method: 'GET',
     inputSchema: z
       .object({
-        thscodes: z.string().superRefine((value, context) => {
-          const tokens = value.split(',');
-          if (tokens.length > 50)
-            context.addIssue({ code: 'custom', message: 'at most 50 raw tokens' });
-          if (tokens.some((token) => !/^\d{6}\.(SH|SZ|BJ)$/iu.test(token)))
-            context.addIssue({ code: 'custom', message: 'invalid or empty A-share token' });
-        }),
+        thscodes: z
+          .string()
+          .superRefine((value, context) => {
+            const tokens = value.split(',');
+            if (tokens.length > 50)
+              context.addIssue({ code: 'custom', message: 'at most 50 raw tokens' });
+            if (tokens.some((token) => !/^\d{6}\.(SH|SZ|BJ)$/iu.test(token.trim())))
+              context.addIssue({ code: 'custom', message: 'invalid or empty A-share token' });
+          })
+          .transform((value) =>
+            [...new Set(value.split(',').map((token) => token.trim().toUpperCase()))].join(','),
+          ),
       })
       .strict(),
     outputSchema: itemOutput,
@@ -2036,9 +2096,20 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     description: 'Query the skyrocket ranking',
     endpoint: '/api/a-share/special-data/skyrocket-list',
     method: 'GET',
-    inputSchema: z.object({ period: z.enum(['day', 'hour']).default('day') }).strict(),
+    inputSchema: z
+      .object({
+        period: z.enum(['day', 'hour']).default('day'),
+        limit: z.number().int().min(1).max(100).default(30),
+      })
+      .strict(),
     outputSchema: itemOutput,
     options: [
+      {
+        flags: '--limit <number>',
+        description: 'ranking rows (1-100)',
+        type: 'integer',
+        defaultValue: 30,
+      },
       {
         flags: '--period <period>',
         description: 'ranking period',
@@ -2056,9 +2127,20 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     description: 'Query the current hot-stock ranking',
     endpoint: '/api/a-share/special-data/hot-stock-list',
     method: 'GET',
-    inputSchema: z.object({ period: z.enum(['day', 'hour']).default('day') }).strict(),
+    inputSchema: z
+      .object({
+        period: z.enum(['day', 'hour']).default('day'),
+        limit: z.number().int().min(1).max(100).default(30),
+      })
+      .strict(),
     outputSchema: itemOutput,
     options: [
+      {
+        flags: '--limit <number>',
+        description: 'ranking rows (1-100)',
+        type: 'integer',
+        defaultValue: 30,
+      },
       {
         flags: '--period <period>',
         description: 'ranking period',
@@ -2154,4 +2236,755 @@ export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     paging: 'none',
     window: 'one-year',
   },
+  {
+    id: 'special.limit-up-statistics',
+    command: ['special', 'limit-up-statistics'],
+    description: 'Query limit-up market and board statistics',
+    endpoint: '/api/a-share/special-data/limit-up-statistics',
+    method: 'GET',
+    inputSchema: z.object({ date: calendarDate.optional() }).strict(),
+    outputSchema: objectOutput,
+    options: [{ flags: '--date <value>', description: 'optional date YYYY-MM-DD', type: 'string' }],
+    paging: 'none',
+    window: 'one-year',
+  },
+  {
+    id: 'special.dragon-tiger-stock-institution',
+    command: ['special', 'dragon-tiger-stock-institution'],
+    description: 'Query institution amounts for a single stock',
+    endpoint: '/api/a-share/special-data/dragon-tiger-stock-institution',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        thscode: aShareCode,
+        date: calendarDate.optional(),
+        rangeDays: z.union([z.literal(1), z.literal(3)]).optional(),
+      })
+      .strict(),
+    outputSchema: objectOutput,
+    options: [
+      { flags: '--thscode <value>', description: 'thscode', type: 'string', required: true },
+      { flags: '--date <value>', description: 'optional date YYYY-MM-DD', type: 'string' },
+      {
+        flags: '--range-days <value>',
+        description: 'listing range: 1 or 3 days; omit for both',
+        type: 'integer',
+        queryName: 'range_days',
+      },
+    ],
+    paging: 'none',
+    window: 'one-year',
+  },
+  {
+    id: 'special.dragon-tiger-department-classic-record',
+    command: ['special', 'dragon-tiger-department-classic-record'],
+    description: 'Query department classic records',
+    endpoint: '/api/a-share/special-data/dragon-tiger-department-classic-record',
+    method: 'GET',
+    inputSchema: z.object({ departmentId }).strict(),
+    outputSchema: objectOutput,
+    options: [
+      {
+        flags: '--department-id <value>',
+        description: 'department record identifier (1-128 characters)',
+        type: 'string',
+        required: true,
+        queryName: 'department_id',
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'special.dragon-tiger-department-history',
+    command: ['special', 'dragon-tiger-department-history'],
+    description: 'Query a page of department historical records',
+    endpoint: '/api/a-share/special-data/dragon-tiger-department-history',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        departmentId,
+        page: z.number().int().min(1).max(2147483647).default(1),
+        size: z.number().int().min(1).max(30).default(30),
+        minNetBuyAmount: z
+          .union([
+            z.literal(5000000),
+            z.literal(30000000),
+            z.literal(50000000),
+            z.literal(100000000),
+          ])
+          .optional(),
+        sortField: z.enum(['trade_date', 'change_ratio', 'net_buy_amount']).default('trade_date'),
+        sortDir: z.enum(['asc', 'desc']).default('desc'),
+      })
+      .strict(),
+    outputSchema: businessPageOutput,
+    options: [
+      {
+        flags: '--department-id <value>',
+        description: 'department record identifier (1-128 characters)',
+        type: 'string',
+        required: true,
+        queryName: 'department_id',
+      },
+      {
+        flags: '--page <value>',
+        description: 'page number starting at 1',
+        type: 'integer',
+        defaultValue: 1,
+      },
+      {
+        flags: '--size <value>',
+        description: 'page rows (1-30)',
+        type: 'integer',
+        defaultValue: 30,
+      },
+      {
+        flags: '--min-net-buy-amount <value>',
+        description: 'minimum net buy bucket in CNY: 5000000, 30000000, 50000000 or 100000000',
+        type: 'integer',
+        queryName: 'min_net_buy_amount',
+      },
+      {
+        flags: '--sort-field <value>',
+        description: 'sort-field',
+        type: 'string',
+        defaultValue: 'trade_date',
+        choices: ['trade_date', 'change_ratio', 'net_buy_amount'],
+        queryName: 'sort_field',
+      },
+      {
+        flags: '--sort-dir <value>',
+        description: 'sort-dir',
+        type: 'string',
+        defaultValue: 'desc',
+        choices: ['asc', 'desc'],
+        queryName: 'sort_dir',
+      },
+    ],
+    paging: 'page',
+    window: 'none',
+  },
+  {
+    id: 'special.abnormal-monitor',
+    command: ['special', 'abnormal-monitor'],
+    description: 'Query severe anomaly and monitored stock records',
+    endpoint: '/api/a-share/special-data/abnormal-monitor-list',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        state: z.enum(['current', 'history']).default('current'),
+        page: z.number().int().min(1).max(2147483647).default(1),
+        size: z.number().int().min(1).max(30).default(30),
+      })
+      .strict(),
+    outputSchema: businessPageOutput,
+    options: [
+      {
+        flags: '--state <value>',
+        description: 'state',
+        type: 'string',
+        defaultValue: 'current',
+        choices: ['current', 'history'],
+      },
+      {
+        flags: '--page <value>',
+        description: 'page number starting at 1',
+        type: 'integer',
+        defaultValue: 1,
+      },
+      {
+        flags: '--size <value>',
+        description: 'page rows (1-30)',
+        type: 'integer',
+        defaultValue: 30,
+      },
+    ],
+    paging: 'page',
+    window: 'none',
+  },
+  {
+    id: 'special.auction-opportunities',
+    command: ['special', 'auction-opportunities'],
+    description: 'Query real-time or historical auction opportunities',
+    endpoint: '/api/a-share/special-data/auction-stock-opportunities',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        date: calendarDate.optional(),
+        warnTypes: opportunityTypes.optional(),
+        market: z.enum(['a_share', 'sh_sz_main', 'sh_a', 'sz_a', 'gem', 'star']).default('a_share'),
+        excludeSt: z.boolean().default(false),
+        thscodes: businessCodes.optional(),
+        sortBy: z.enum(['warn_time', 'warn_type']).default('warn_time'),
+        sortOrder: z.enum(['asc', 'desc']).default('desc'),
+        page: z.number().int().min(1).max(2147483647).default(1),
+        size: z.number().int().min(1).max(20).default(20),
+      })
+      .strict(),
+    outputSchema: objectOutput,
+    options: [
+      { flags: '--date <value>', description: 'optional date YYYY-MM-DD', type: 'string' },
+      {
+        flags: '--warn-types <value>',
+        description: 'comma-separated opportunity types 68710 through 68727',
+        type: 'string',
+        queryName: 'warn_types',
+      },
+      {
+        flags: '--market <value>',
+        description: 'market',
+        type: 'string',
+        defaultValue: 'a_share',
+        choices: ['a_share', 'sh_sz_main', 'sh_a', 'sz_a', 'gem', 'star'],
+      },
+      {
+        flags: '--exclude-st <value>',
+        description: 'exclude-st',
+        type: 'boolean',
+        defaultValue: false,
+        queryName: 'exclude_st',
+      },
+      { flags: '--thscodes <value>', description: 'thscodes', type: 'string' },
+      {
+        flags: '--sort-by <value>',
+        description: 'sort-by',
+        type: 'string',
+        defaultValue: 'warn_time',
+        choices: ['warn_time', 'warn_type'],
+        queryName: 'sort_by',
+      },
+      {
+        flags: '--sort-order <value>',
+        description: 'sort-order',
+        type: 'string',
+        defaultValue: 'desc',
+        choices: ['asc', 'desc'],
+        queryName: 'sort_order',
+      },
+      {
+        flags: '--page <value>',
+        description: 'page number starting at 1',
+        type: 'integer',
+        defaultValue: 1,
+      },
+      {
+        flags: '--size <value>',
+        description: 'page rows (1-20)',
+        type: 'integer',
+        defaultValue: 20,
+      },
+    ],
+    paging: 'page',
+    window: 'none',
+  },
+  {
+    id: 'special.auction-opportunity-dates',
+    command: ['special', 'auction-opportunity-dates'],
+    description: 'Query available auction opportunity dates',
+    endpoint: '/api/a-share/special-data/auction-opportunity-dates',
+    method: 'GET',
+    inputSchema: z.object({}).strict(),
+    outputSchema: objectOutput,
+    options: [],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'ipo.a-share-calendar',
+    command: ['ipo', 'a-share-calendar'],
+    description: 'Query A-share IPO dates and subscription status',
+    endpoint: '/api/a-share/ipo/calendar-list',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        market: z.enum(['sh_sz', 'bj']),
+        status: z.enum(['upcoming', 'subscribable', 'awaiting_listing']),
+      })
+      .strict(),
+    outputSchema: objectOutput,
+    options: [
+      {
+        flags: '--market <value>',
+        description: 'market',
+        type: 'string',
+        choices: ['sh_sz', 'bj'],
+        required: true,
+      },
+      {
+        flags: '--status <value>',
+        description: 'status',
+        type: 'string',
+        choices: ['upcoming', 'subscribable', 'awaiting_listing'],
+        required: true,
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'ipo.hk-applications',
+    command: ['ipo', 'hk-applications'],
+    description: 'Query a page of Hong Kong IPO applications',
+    endpoint: '/api/hk-share/ipo/application-list',
+    method: 'GET',
+    inputSchema: z.object({ page: z.number().int().min(1).max(2147483647).default(1) }).strict(),
+    outputSchema: objectOutput,
+    options: [
+      {
+        flags: '--page <value>',
+        description: 'page number starting at 1',
+        type: 'integer',
+        defaultValue: 1,
+      },
+    ],
+    paging: 'page',
+    window: 'none',
+  },
+  {
+    id: 'ipo.hk-calendar',
+    command: ['ipo', 'hk-calendar'],
+    description: 'Query Hong Kong IPO subscription and listing dates',
+    endpoint: '/api/hk-share/ipo/calendar-list',
+    method: 'GET',
+    inputSchema: z.object({ status: z.enum(['subscribable', 'awaiting_listing']) }).strict(),
+    outputSchema: objectOutput,
+    options: [
+      {
+        flags: '--status <value>',
+        description: 'status',
+        type: 'string',
+        choices: ['subscribable', 'awaiting_listing'],
+        required: true,
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'ipo.hk-issue-detail',
+    command: ['ipo', 'hk-issue-detail'],
+    description: 'Query Hong Kong IPO issue price range and lot size',
+    endpoint: '/api/hk-share/ipo/issue-detail',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        issueCode: z
+          .string()
+          .min(1)
+          .max(32)
+          .refine((value) => value.trim().length > 0),
+      })
+      .strict(),
+    outputSchema: objectOutput,
+    options: [
+      {
+        flags: '--issue-code <value>',
+        description: 'issue record identifier from the Hong Kong IPO calendar (1-32 characters)',
+        type: 'string',
+        required: true,
+        queryName: 'issue_code',
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.article-detail',
+    command: ['news', 'article-detail'],
+    description: 'Query news article detail',
+    endpoint: '/api/news/article/detail',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        clientType: newsSegment.refine(
+          (value) => ['WEB', 'WEB_ENCRYPTED', 'PC', 'PC_LIST'].includes(value.toUpperCase()),
+          'expected WEB, WEB_ENCRYPTED, PC or PC_LIST',
+        ),
+        encodedSeq: newsSegment,
+      })
+      .strict(),
+    outputSchema: newsArticleOutput,
+    options: [
+      {
+        flags: '--client-type <value>',
+        description: 'WEB, WEB_ENCRYPTED, PC or PC_LIST (case insensitive)',
+        type: 'string',
+        required: true,
+        queryName: 'client_type',
+      },
+      {
+        flags: '--encoded-seq <value>',
+        description: 'opaque article identifier',
+        type: 'string',
+        required: true,
+        queryName: 'encoded_seq',
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.flash-list',
+    command: ['news', 'flash-list'],
+    description: 'Query a page of news flashes',
+    endpoint: '/api/news/flash/list',
+    method: 'GET',
+    inputSchema: z.object({ tagId: z.number().int().safe(), seq: newsSeq }).strict(),
+    outputSchema: newsFlashOutput,
+    options: [
+      {
+        flags: '--tag-id <value>',
+        description: 'flash channel identifier',
+        type: 'integer',
+        required: true,
+        queryName: 'tag_id',
+      },
+      {
+        flags: '--seq <value>',
+        description: 'decimal string cursor; first page 0',
+        type: 'string',
+        required: true,
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.flash-refresh',
+    command: ['news', 'flash-refresh'],
+    description: 'Refresh news flashes from a supplied cursor',
+    endpoint: '/api/news/flash/refresh',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        tagId: z.number().int().safe(),
+        seq: newsSeq,
+        createTimeMs: z
+          .number()
+          .int()
+          .safe()
+          .refine((value) => value % 1000 === 0, 'milliseconds must be divisible by 1000'),
+      })
+      .strict(),
+    outputSchema: newsFlashOutput,
+    options: [
+      {
+        flags: '--tag-id <value>',
+        description: 'flash channel identifier',
+        type: 'integer',
+        required: true,
+        queryName: 'tag_id',
+      },
+      {
+        flags: '--seq <value>',
+        description: 'decimal string cursor',
+        type: 'string',
+        required: true,
+      },
+      {
+        flags: '--create-time-ms <value>',
+        description: 'known creation time in milliseconds, divisible by 1000',
+        type: 'integer',
+        required: true,
+        queryName: 'create_time_ms',
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.notice-detail',
+    command: ['news', 'notice-detail'],
+    description: 'Query announcement detail and interpretation',
+    endpoint: '/api/news/notice/detail',
+    method: 'GET',
+    inputSchema: z.object({ seq: newsSegment }).strict(),
+    outputSchema: newsNoticeOutput,
+    options: [
+      {
+        flags: '--seq <value>',
+        description: 'opaque announcement identifier',
+        type: 'string',
+        required: true,
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.topic-hot-list',
+    command: ['news', 'topic-hot-list'],
+    description: 'Query hot news topics',
+    endpoint: '/api/news/topic/hot-list',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        tabId: z.number().int().safe(),
+        cursor: z.string().optional(),
+        limit: z.number().int().min(1).max(10).default(10),
+        importantOnly: z.boolean().default(false),
+      })
+      .strict(),
+    outputSchema: newsTopicOutput,
+    options: [
+      {
+        flags: '--tab-id <value>',
+        description: 'topic tab identifier',
+        type: 'integer',
+        required: true,
+        queryName: 'tab_id',
+      },
+      {
+        flags: '--cursor <value>',
+        description: 'opaque next_cursor from previous response',
+        type: 'string',
+      },
+      {
+        flags: '--limit <value>',
+        description: 'page rows (1-10)',
+        type: 'integer',
+        defaultValue: 10,
+      },
+      {
+        flags: '--important-only <value>',
+        description: 'only important topics',
+        type: 'boolean',
+        defaultValue: false,
+        queryName: 'important_only',
+      },
+    ],
+    paging: 'offset',
+    pagingEnd: 'has-more',
+    window: 'none',
+  },
+  {
+    id: 'news.anomaly-analysis',
+    command: ['news', 'anomaly-analysis'],
+    description: 'Query anomaly interpretations over a date range',
+    endpoint: '/api/news/anomaly/analysis',
+    method: 'GET',
+    inputSchema: z
+      .object({ beginDate: calendarDate, endDate: calendarDate, thscode: nonblank.optional() })
+      .strict()
+      .refine((value) => value.beginDate <= value.endDate, 'begin_date must not exceed end_date'),
+    outputSchema: newsAnomalyOutput,
+    options: [
+      {
+        flags: '--begin-date <value>',
+        description: 'start date YYYY-MM-DD',
+        type: 'string',
+        required: true,
+        queryName: 'begin_date',
+      },
+      {
+        flags: '--end-date <value>',
+        description: 'end date YYYY-MM-DD',
+        type: 'string',
+        required: true,
+        queryName: 'end_date',
+      },
+      {
+        flags: '--thscode <value>',
+        description: 'optional code in the format required by this endpoint',
+        type: 'string',
+      },
+    ],
+    paging: 'none',
+    window: 'none',
+  },
+  {
+    id: 'news.stock-timeline-list',
+    command: ['news', 'stock-timeline-list'],
+    description: 'Query stock timeline news',
+    endpoint: '/api/news/stock/timeline-list',
+    method: 'GET',
+    inputSchema: z
+      .object({
+        thscode: z.string().regex(/^[0-9a-z]+\.[a-z]+$/iu),
+        offset: nonblank,
+        size: z.number().int().min(1).max(100).optional(),
+      })
+      .strict(),
+    outputSchema: newsTimelineOutput,
+    options: [
+      {
+        flags: '--thscode <value>',
+        description: 'single complete thscode',
+        type: 'string',
+        required: true,
+      },
+      {
+        flags: '--offset <value>',
+        description: 'first for initial page; then response offset',
+        type: 'string',
+        required: true,
+      },
+      {
+        flags: '--size <value>',
+        description: 'page rows (1-100); omitted by default',
+        type: 'integer',
+      },
+    ],
+    paging: 'offset',
+    pagingEnd: 'has-more',
+    window: 'none',
+  },
 ] as const;
+
+function calendarYearsAfter(milliseconds: number, years: number): number {
+  const date = new Date(milliseconds + 8 * 3600_000);
+  const month = date.getUTCMonth();
+  date.setUTCFullYear(date.getUTCFullYear() + years);
+  if (date.getUTCMonth() !== month) date.setUTCDate(0);
+  return date.getTime() - 8 * 3600_000;
+}
+
+function recentIndexLowerBound(): number {
+  const today = new Date(Date.now() + 8 * 3600_000);
+  today.setUTCHours(0, 0, 0, 0);
+  return calendarYearsAfter(today.getTime() - 8 * 3600_000, -5);
+}
+
+function batchCodes(maximum: number) {
+  return z
+    .string()
+    .superRefine((value, context) => {
+      const tokens = value.split(',');
+      if (tokens.length > maximum)
+        context.addIssue({
+          code: 'custom',
+          message: `thscodes accepts at most ${maximum} raw tokens`,
+        });
+      if (tokens.some((token) => !/^[A-Z0-9]+\.[A-Z0-9]+$/iu.test(token.trim())))
+        context.addIssue({ code: 'custom', message: 'expected comma-separated complete thscodes' });
+    })
+    .transform((value) =>
+      [...new Set(value.split(',').map((token) => token.trim().toUpperCase()))].join(','),
+    );
+}
+
+const batchGroups = z.array(
+  z
+    .object({
+      thscode: z.string(),
+      timestamp: z.number().int().nullable(),
+      item: z.array(resultRecord),
+    })
+    .strict(),
+);
+const batchHistoryOutput = z
+  .object({
+    interval: z.enum(['1d', '1w', '1mo']),
+    adjust: z.enum(['none', 'forward', 'backward']).nullable(),
+    item: batchGroups,
+  })
+  .strict();
+const batchFinancialOutput = z.object({ item: batchGroups }).strict();
+
+const batchHistoryFields = {
+  thscodes: batchCodes(10),
+  startMs: z.number().int().nonnegative(),
+  endMs: z.number().int().nonnegative(),
+};
+
+function batchHistoryInput(kind: 'market' | 'index' | 'fund') {
+  return z
+    .object({
+      ...batchHistoryFields,
+      interval: (kind === 'market' ? z.enum(['1d', '1w', '1mo']) : z.literal('1d')).default('1d'),
+      ...(kind === 'market'
+        ? { adjust: z.enum(['none', 'forward', 'backward']).default('forward') }
+        : {}),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (value.endMs < value.startMs)
+        context.addIssue({ code: 'custom', message: 'end-ms must be >= start-ms' });
+      if (kind === 'index') {
+        if (value.startMs < recentIndexLowerBound())
+          context.addIssue({
+            code: 'custom',
+            message: 'index history is available for the recent five calendar years',
+          });
+      } else if (value.endMs > calendarYearsAfter(value.startMs, kind === 'market' ? 10 : 5)) {
+        context.addIssue({
+          code: 'custom',
+          message: `history window must not exceed ${kind === 'market' ? 10 : 5} calendar years`,
+        });
+      }
+    });
+}
+
+const batchFinancialInput = z
+  .object({
+    thscodes: batchCodes(10),
+    period: z.enum(['annual', 'quarterly']).default('annual'),
+    limit: z.number().int().min(1).max(20).optional(),
+    startMs: z.number().int().nonnegative().optional(),
+    endMs: z.number().int().nonnegative().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const { thscodes, ...shared } = value;
+    const parsed = financialInput.safeParse({ ...shared, thscode: thscodes.split(',')[0] });
+    // Asset membership is resolved by the server and reported per requested code.
+    const sharedIssues = parsed.success
+      ? []
+      : parsed.error.issues.filter((issue) => issue.path[0] !== 'thscode');
+    for (const issue of sharedIssues)
+      context.addIssue({ code: 'custom', message: issue.message, path: issue.path });
+    if (
+      value.startMs !== undefined &&
+      value.endMs !== undefined &&
+      value.endMs > calendarYearsAfter(value.startMs, 10)
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'financials window must not exceed ten calendar years',
+      });
+  });
+
+const batchDefinitions = [
+  ['market.history', batchHistoryInput('market')],
+  ['index.history', batchHistoryInput('index')],
+  ['fund.history', batchHistoryInput('fund')],
+  ['financials.income', batchFinancialInput],
+  ['financials.balance-sheet', batchFinancialInput],
+  ['financials.cash-flow', batchFinancialInput],
+] as const;
+
+export const remoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
+  ...baseRemoteCapabilities,
+  ...batchDefinitions.map(([id, inputSchema]): RemoteCapabilityDescriptor => {
+    const original = baseRemoteCapabilities.find((capability) => capability.id === id)!;
+    const options = original.options.map((option) =>
+      option.flags.startsWith('--thscode ')
+        ? {
+            flags: '--thscodes <codes>',
+            description: 'comma-separated complete thscodes; raw token limit applies',
+            type: 'string' as const,
+            required: true,
+          }
+        : option,
+    );
+    if (id === 'market.history' || id === 'index.history')
+      options.push({
+        flags: '--interval <interval>',
+        description: 'bar interval',
+        type: 'string',
+        choices: id === 'market.history' ? ['1d', '1w', '1mo'] : ['1d'],
+        defaultValue: '1d',
+      });
+    return {
+      ...original,
+      id: `${id}-batch`,
+      command: [original.command[0], `${original.command[1]}-batch`],
+      description: `${original.description} for multiple thscodes`,
+      endpoint: `${original.endpoint}-batch`,
+      inputSchema,
+      outputSchema: id.includes('history') ? batchHistoryOutput : batchFinancialOutput,
+      options,
+    };
+  }),
+];

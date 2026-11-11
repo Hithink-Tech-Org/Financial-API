@@ -55,7 +55,7 @@ import { syncDataFromFuyao } from '../../application/use-cases/data-sync.js';
 import { cleanManagedCache } from '../../application/use-cases/data-clean.js';
 import { removeDatabase } from '../../application/use-cases/data-remove.js';
 import type { PlatformPaths } from '../../infrastructure/filesystem/platform-paths.js';
-import type { ApiKeyAuthProvider } from '../../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../../infrastructure/credentials/global-provider.js';
 import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { withExclusiveDataLock } from '../../infrastructure/filesystem/process-lock.js';
@@ -137,7 +137,7 @@ export function registerDataCommands(
   program: Command,
   context: CliContext,
   paths: PlatformPaths,
-  remote: { authProvider: ApiKeyAuthProvider; baseUrl: string; cliVersion: string },
+  remote: { authProvider: GlobalAuthProvider; baseUrl: string; cliVersion: string },
 ): void {
   const data = program
     .command('data')
@@ -189,15 +189,13 @@ export function registerDataCommands(
               }
             : await syncDataFromFuyao(db.connection, {
                 baseUrl: remote.baseUrl,
-                apiKey: (
-                  await remote.authProvider.resolve(
-                    init.optsWithGlobals<{ profile?: string }>().profile ?? 'default',
-                    init.optsWithGlobals<{ apiKey?: string; apiKeyStdin?: boolean }>()
-                      .apiKeyStdin === true
-                      ? await stdinText(context.signal)
-                      : init.optsWithGlobals<{ apiKey?: string }>().apiKey,
-                  )
-                ).apiKey,
+                auth: await remote.authProvider.resolve(
+                  init.optsWithGlobals<{ profile?: string }>().profile ?? 'default',
+                  init.optsWithGlobals<{ apiKey?: string; apiKeyStdin?: boolean }>().apiKeyStdin ===
+                    true
+                    ? await stdinText(context.signal)
+                    : init.optsWithGlobals<{ apiKey?: string }>().apiKey,
+                ),
                 cacheDir: paths.cacheDir,
                 onProgress: createDownloadProgressReporter(context),
                 signal: context.signal,
@@ -237,7 +235,7 @@ export function registerDataCommands(
         // 从 Fuyao API 增量同步数据
         const result = await syncDataFromFuyao(db.connection, {
           baseUrl: remote.baseUrl,
-          apiKey: auth.apiKey,
+          auth,
           cacheDir: paths.cacheDir,
           onProgress: createDownloadProgressReporter(context),
           signal: context.signal,

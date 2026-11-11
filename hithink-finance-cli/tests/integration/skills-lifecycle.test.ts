@@ -81,6 +81,21 @@ test('persists explicit targets, appends later Agents, and shares one linked con
   expect(status.strategy).toMatchObject({ mode: 'auto', explicit: ['codex', 'claude-code'] });
   expect(status).toMatchObject({ targetsVerified: true, targetStatus: 'ready' });
   expect(status.targets.every((target) => target.status === 'ready')).toBe(true);
+  const source = path.join(value.packageRoot, 'skills');
+  await writeFile(path.join(source, 'hithink-finance-test', 'SKILL.md'), 'official-v2');
+  await rm(path.join(source, 'manifest.json'));
+  await writeFile(
+    path.join(source, 'manifest.json'),
+    JSON.stringify(await buildSkillManifest(source, '0.2.0')),
+  );
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home })).failures,
+  ).toEqual([]);
+  for (const agent of ['.codex', '.claude']) {
+    const target = path.join(value.home, agent, 'skills', 'hithink-finance-test');
+    expect((await lstat(target)).isSymbolicLink()).toBe(true);
+    expect(await readFile(path.join(target, 'SKILL.md'), 'utf8')).toBe('official-v2');
+  }
 });
 
 test('repairs a broken link and preserves a selected copy delivery mode', async () => {
@@ -104,6 +119,71 @@ test('repairs a broken link and preserves a selected copy delivery mode', async 
   await rm(link, { recursive: true, force: true });
   await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home });
   expect((await lstat(link)).isSymbolicLink()).toBe(true);
+});
+
+test('converts owned links to copies and keeps upgrades local to the bundled package', async () => {
+  const value = await fixture();
+  await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+    agents: ['workbuddy'],
+  });
+  const target = path.join(value.home, '.workbuddy', 'skills', 'hithink-finance-test');
+  expect((await lstat(target)).isSymbolicLink()).toBe(true);
+  const copied = await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+    agents: ['workbuddy'],
+    copy: true,
+  });
+  expect(copied.failures).toEqual([]);
+  expect((await lstat(target)).isSymbolicLink()).toBe(false);
+  const source = path.join(value.packageRoot, 'skills');
+  await writeFile(path.join(source, 'hithink-finance-test', 'SKILL.md'), 'official-v2');
+  await rm(path.join(source, 'manifest.json'));
+  await writeFile(
+    path.join(source, 'manifest.json'),
+    JSON.stringify(await buildSkillManifest(source, '0.2.0')),
+  );
+  const upgraded = await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+  });
+  expect(upgraded.failures).toEqual([]);
+  expect(await readFile(path.join(target, 'SKILL.md'), 'utf8')).toBe('official-v2');
+});
+
+test('a foreign link blocks copy conversion before any owned link is removed', async () => {
+  const value = await fixture();
+  const source = path.join(value.packageRoot, 'skills');
+  await mkdir(path.join(source, 'hithink-finance-other'));
+  await writeFile(path.join(source, 'hithink-finance-other', 'SKILL.md'), 'other');
+  await rm(path.join(source, 'manifest.json'));
+  await writeFile(
+    path.join(source, 'manifest.json'),
+    JSON.stringify(await buildSkillManifest(source, '0.1.0')),
+  );
+  await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+    agents: ['workbuddy'],
+  });
+  const directory = path.join(value.home, '.workbuddy', 'skills');
+  const outside = path.join(value.home, 'user-skill');
+  await mkdir(outside);
+  await writeFile(path.join(outside, 'SKILL.md'), 'user');
+  await rm(path.join(directory, 'hithink-finance-test'), { recursive: true });
+  await symlink(
+    outside,
+    path.join(directory, 'hithink-finance-test'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  const result = await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+    agents: ['workbuddy'],
+    copy: true,
+  });
+  expect(result.failures).toHaveLength(1);
+  expect((await lstat(path.join(directory, 'hithink-finance-other'))).isSymbolicLink()).toBe(true);
+  expect(await readFile(path.join(outside, 'SKILL.md'), 'utf8')).toBe('user');
+  const status = await readSkillsLifecycleStatus(value.packageRoot, value.paths, value.home);
+  expect(status.targets[0]?.delivery).toBe('link');
 });
 
 test('removing one target excludes it from automatic discovery without removing another target', async () => {

@@ -24,7 +24,7 @@ def test_tool_identity_and_public_rest_mapping():
 
 def test_entry_preserves_connection_and_runtime_schema_rules():
     text = (ROOT / "docs/mcp.md").read_text(encoding="utf-8")
-    assert text.count("${HITHINK_FINANCE_API_KEY}") == 6
-    for domain in ("meta", "a-share", "a-share-index", "fund", "futures", "options"):
+    assert text.count("${HITHINK_FINANCE_API_KEY}") == 8
+    for domain in ("meta", "a-share", "hk-share", "a-share-index", "fund", "futures", "options", "news"):
         assert f"https://fuyao.aicubes.cn/mcp/{domain}" in text
     assert "tools/list" in text and "schema" in text and "code=2003" in text

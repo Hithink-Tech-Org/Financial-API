@@ -1,25 +1,27 @@
 # MCP 接入与 Agent 路由契约
 
-同花顺金融数据服务提供 6 个托管 MCP 端点，适合 Claude Desktop、Cursor、Windsurf 等支持 HTTP MCP 的 Chat/Agent 客户端。六个端点共用在 <https://fuyao.aicubes.cn/admin/> 获取的 API Key，无需在本地运行 MCP Server。
+同花顺金融数据服务按八个数据域提供 MCP 接入配置，适合 Claude Desktop、Cursor、Windsurf 等支持 HTTP MCP 的 Chat/Agent 客户端。各端点共用在 <https://fuyao.aicubes.cn/admin/> 获取的 API Key，无需在本地运行 MCP Server；连接后以实时 `tools/list` 确认可用工具。
 
 按[业务域路由](mcp/README.md)读取目标工具的本地能力快照，再以当前连接的工具名和 schema 核对调用参数。
 
-## 六个服务
+## 八个服务
 
 | 客户端服务名 | 地址 | 职责 |
 | --- | --- | --- |
 | `hithink-finance-a-share` | `https://fuyao.aicubes.cn/mcp/a-share` | A 股行情、公司行为、财务、估值、集合竞价、日历和特色数据 |
+| `hithink-finance-hk-share` | `https://fuyao.aicubes.cn/mcp/hk-share` | 港股新股递表、认购、上市日历与发行详情 |
 | `hithink-finance-a-share-index` | `https://fuyao.aicubes.cn/mcp/a-share-index` | 指数/板块目录、成分和行情 |
 | `hithink-finance-meta` | `https://fuyao.aicubes.cn/mcp/meta` | 标的搜索、名称消歧和代码表 |
 | `hithink-finance-fund` | `https://fuyao.aicubes.cn/mcp/fund` | 基金资料、经理、披露、财务、回测、指标、QDII 额度、净值、收益、资讯和场内行情 |
 | `hithink-finance-futures` | `https://fuyao.aicubes.cn/mcp/futures` | 期货品种、合约、持仓、仓单、基差、日程和行情 |
 | `hithink-finance-options` | `https://fuyao.aicubes.cn/mcp/options` | 期权品种、合约和行情 |
+| `hithink-finance-news` | `https://fuyao.aicubes.cn/mcp/news` | 资讯详情、快讯、公告解读、专题、日期范围异动解读与个股分时新闻 |
 
 `hithink-finance-*` 是推荐写入客户端配置的本地服务名；URL 路径保持不变。
 
 ## 默认配置
 
-不同客户端的配置文件位置和 Secret 插值语法不同。下面给出通用 HTTP MCP 结构，默认一次配置全部六个端点，之后由 Agent 按意图只调用需要的服务：
+不同客户端的配置文件位置和 Secret 插值语法不同。下面给出通用 HTTP MCP 结构，默认一次配置全部八个端点，之后由 Agent 按意图只调用需要的服务：
 
 ```json
 {
@@ -32,6 +34,11 @@
     "hithink-finance-a-share-index": {
       "type": "http",
       "url": "https://fuyao.aicubes.cn/mcp/a-share-index",
+      "headers": { "X-api-key": "${HITHINK_FINANCE_API_KEY}" }
+    },
+    "hithink-finance-hk-share": {
+      "type": "http",
+      "url": "https://fuyao.aicubes.cn/mcp/hk-share",
       "headers": { "X-api-key": "${HITHINK_FINANCE_API_KEY}" }
     },
     "hithink-finance-meta": {
@@ -47,6 +54,11 @@
     "hithink-finance-futures": {
       "type": "http",
       "url": "https://fuyao.aicubes.cn/mcp/futures",
+      "headers": { "X-api-key": "${HITHINK_FINANCE_API_KEY}" }
+    },
+    "hithink-finance-news": {
+      "type": "http",
+      "url": "https://fuyao.aicubes.cn/mcp/news",
       "headers": { "X-api-key": "${HITHINK_FINANCE_API_KEY}" }
     },
     "hithink-finance-options": {
@@ -66,11 +78,13 @@
 2. **先消歧再取数**：用户只给名称、ticker 或不完整代码时，先调用 `hithink-finance-meta` 的搜索工具确认唯一 `thscode`。
 3. **只读取相关工具**：确定业务域后，在业务域首页的分组中读取目标工具文档；返回字段通过文档中的 REST 链接按需读取：
    - [A 股工具](mcp/a-share/README.md)
+   - [港股新股工具](mcp/hk-share/README.md)
    - [指数与板块工具](mcp/index/README.md)
    - [标的元数据工具](mcp/meta/README.md)
    - [基金工具](mcp/fund/README.md)
    - [期货工具](mcp/futures/README.md)
    - [期权工具](mcp/options/README.md)
+   - [资讯工具](mcp/news/README.md)
 4. **按需检查连接**：只有准备使用某个服务，或用户明确要求诊断连接时，才检查该服务是否连接并读取当前 `tools/list`。
 5. **执行最小调用**：认证检查也使用目标任务所需的最小有界请求，禁止用省略标的的全市场快照做探针。
 6. **控制结果规模**：分页全集、全市场、长时间序列或大量成分股必须落盘，只返回路径、行数和必要摘要。

@@ -5,6 +5,14 @@
 净值与场内成交价格分别进入业绩与行情；最新披露与历史持仓分别选择对应接口。
 
 
+## 资金流向
+
+宽基 ETF 日统计净流入序列，端内专用。
+
+| 需求 / 文档 | 接口或工具 | 使用范围 |
+| --- | --- | --- |
+| [宽基ETF申购净流入](etf-flow-net-inflow-historical.md) | `GET /api/fund/etf-flow/net-inflow-historical` | 端内专用，客户端可用 |
+
 ## 资料与标识
 
 查询目录、搜索、合约或基本资料，取得后续请求所需标识。
@@ -22,6 +30,7 @@ ETF 成交价格选择快照或历史日线；基金净值进入净值与业绩�
 | --- | --- | --- |
 | [场内基金行情快照](fund-market.md#market-snapshot) | `GET /api/fund/market/snapshot` | 公开 |
 | [场内基金历史日线行情](fund-market.md#market-historical) | `GET /api/fund/market/historical` | 公开 |
+| [场内基金批量历史日线行情](fund-market.md#market-historical-batch) | `GET /api/fund/market/historical-batch` | 公开 |
 
 ## 财务报表与指标
 
@@ -86,15 +95,6 @@ ETF 成交价格选择快照或历史日线；基金净值进入净值与业绩�
 | --- | --- | --- |
 | [基金在线回测](fund-backtest.md#backtest-result) | `GET /api/fund/backtest/result` | 公开 |
 | [基金回测可用指标](fund-backtest.md#backtest-indicators) | `GET /api/fund/backtest/indicators` | 公开 |
-
-## 通用指标
-
-选择画线序列或表格，确认指标与选择器。
-
-| 需求 / 文档 | 接口或工具 | 使用范围 |
-| --- | --- | --- |
-| [基金画线指标](fund-indicators.md#indicators-line) | `GET /api/fund/indicators/line` | 公开 |
-| [基金表格指标](fund-indicators.md#indicators-table) | `GET /api/fund/indicators/table` | 公开 |
 
 ## QDII 额度
 

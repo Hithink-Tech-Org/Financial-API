@@ -2,7 +2,7 @@
  * Agent Skills 安装与卸载模块
  *
  * 管理 AI Agent 扩展技能包的安装、同步和卸载操作。
- * 技能包是预置的金融数据分析工具集，通过 skills CLI 工具进行全局安装。
+ * 技能包随 CLI 分发，发布到用户级共享目录并链接到选定 Agent。
  *
  * 技能包分类：
  * - hithink-finance-shared：共享基础工具
@@ -16,8 +16,7 @@
  * - hithink-finance-data：通用数据查询
  * - hithink-finance-research：研报查询
  *
- * 实现方式：通过 spawn 子进程调用 `skills` CLI 适配标准 Agent，随后把同一份
- * package manifest 同步到已安装 WorkBuddy/QClaw 的专属发现目录。
+ * 实现方式：读取 package manifest，由本地生命周期管理器同步、校验和移除。
  *
  * @module skills/installer
  */
@@ -264,8 +263,7 @@ export async function removeDedicatedSkills(
 /**
  * 同步（安装/更新）所有预置技能包
  *
- * 调用 `skills add <source> --global --copy --all --full-depth` 将
- * 技能源目录下的所有技能安装到全局位置。
+ * 将包内内容发布到用户级共享目录，再为选定 Agent 建立目录链接。
  *
  * @param packageRoot - npm 包的根路径（包含 node_modules 和 skills 目录）
  * @returns 子进程退出码 { code: number }
@@ -304,7 +302,7 @@ export async function syncSkills(
 /**
  * 卸载所有预置技能包
  *
- * 调用 `skills remove <names...> --global --yes` 删除所有已安装的技能。
+ * 根据本地托管记录移除选定 Agent 的链接或副本。
  *
  * @param packageRoot - npm 包的根路径
  * @returns 子进程退出码 { code: number }
@@ -332,15 +330,7 @@ export async function removeSkills(
 }
 
 /**
- * 启动子进程运行 skills CLI 命令
- *
- * 子进程配置：
- * - stdio：忽略 stdin，pipe stdout/stderr
- * - windowsHide：Windows 上隐藏控制台窗口
- * - 监听 'error'（进程启动失败）和 'exit'（进程结束）事件
- *
- * @param invocation - CLI 调用参数
- * @returns Promise 包装的子进程退出码
+ * 解析安装生命周期中的 Agent 目标选择。
  */
 export function environmentSkillSelection(
   env: NodeJS.ProcessEnv,
@@ -365,79 +355,4 @@ export function environmentSkillSelection(
       `Unknown HITHINK_FINANCE_SKILLS_AGENTS value: ${unknown.join(', ')}. Available: ${supportedSkillAgents.join(', ')}.`,
     );
   return { agents: values as SkillAgent[], replace: true };
-}
-
-/**
- * 所有预置技能的名称列表
- *
- * 每个技能对应一个 skill 包，涵盖金融数据分析的不同领域。
- */
-const skillNames = [
-  'hithink-finance-shared',
-  'hithink-finance-symbol',
-  'hithink-finance-market',
-  'hithink-finance-special-data',
-  'hithink-finance-financials',
-  'hithink-finance-index',
-  'hithink-finance-fund',
-  'hithink-finance-futures',
-  'hithink-finance-options',
-  'hithink-finance-valuation',
-  'hithink-finance-data',
-  'hithink-finance-research',
-];
-
-/**
- * 构造技能移除命令参数
- *
- * 命令格式：
- * `node <cli.mjs> remove <skill1> <skill2> ... --global --yes`
- *
- * --global：全局范围移除
- * 不指定 --agent 时，skills CLI 会遍历所有 agent 目标。
- * --yes：跳过确认提示
- *
- * @param packageRoot - npm 包的根路径
- * @returns CLI 调用的命令、参数和环境变量
- */
-export function skillsRemoveArguments(packageRoot: string): ReturnType<typeof skillsCliArguments> {
-  // skills CLI 入口脚本路径
-  const cli = path.join(packageRoot, 'node_modules', 'skills', 'bin', 'cli.mjs');
-  return {
-    command: process.execPath,
-    args: [cli, 'remove', ...skillNames, '--global', '--yes'],
-    // 禁用遥测数据上报
-    env: { ...process.env, DISABLE_TELEMETRY: '1' },
-  };
-}
-
-/**
- * 构造技能安装命令参数
- *
- * 命令格式：
- * `node <cli.mjs> add <source> --global --copy --all --full-depth`
- *
- * --global：全局范围安装
- * --copy：复制文件（而非创建符号链接）
- * --all：安装所有技能
- * --full-depth：完全深度导航
- *
- * @param packageRoot - npm 包的根路径
- * @returns CLI 调用的命令、参数和环境变量
- */
-export function skillsCliArguments(packageRoot: string): {
-  command: string;
-  args: string[];
-  env: NodeJS.ProcessEnv;
-} {
-  // skills CLI 入口脚本路径
-  const cli = path.join(packageRoot, 'node_modules', 'skills', 'bin', 'cli.mjs');
-  // 技能源文件目录（相对于 packageRoot 的 skills 目录）
-  const source = path.join(packageRoot, 'skills');
-  return {
-    command: process.execPath,
-    args: [cli, 'add', source, '--global', '--copy', '--all', '--full-depth'],
-    // 禁用遥测数据上报
-    env: { ...process.env, DISABLE_TELEMETRY: '1' },
-  };
 }

@@ -1,3 +1,7 @@
+import type { AuthSession } from '../../application/ports/auth-provider.js';
+import { FuyaoClient } from '../fuyao/client.js';
+import { z } from 'zod';
+import { CliError } from '../../contracts/errors.js';
 /**
  * Fuyao 数据转储下载客户端模块
  *
@@ -48,7 +52,7 @@ export interface FetchFuyaoDumpOptions {
   /** Fuyao API 基础 URL */
   baseUrl: string;
   /** API 认证密钥 */
-  apiKey: string;
+  auth: AuthSession;
   /** 转储数据类型 */
   kind: DumpKind;
   /** 本地缓存目录 */
@@ -197,33 +201,23 @@ function releaseId(url: URL): string {
 async function signDump(
   options: FetchFuyaoDumpOptions,
   fetchImplementation: typeof globalThis.fetch,
+  authRefreshBudget: { used: boolean },
 ): Promise<URL> {
   // 构造签名 API 请求 URL
   const url = new URL(`/api/dump/market-dumps/${options.kind}/download-url`, options.baseUrl);
-  const response = await fetchImplementation(url, {
-    headers: {
-      'X-api-key': options.apiKey,
-      'X-THS-Skill-Id': 'Hithink-Finance-CLI',
-      accept: 'application/json',
-    },
-    signal:
-      options.signal === undefined
-        ? AbortSignal.timeout(30_000)
-        : AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
+  const client = new FuyaoClient({
+    baseUrl: options.baseUrl,
+    auth: options.auth,
+    fetch: fetchImplementation,
+    maxAttempts: 1,
+    authRefreshBudget,
+    ...(options.signal ? { signal: options.signal } : {}),
   });
-
-  if (!response.ok) throw new Error(`Dump signing failed: HTTP ${response.status}`);
-
-  // 解析响应：code 必须为 0，data.presigned_url 必须存在
-  const envelope = (await response.json()) as {
-    code?: number;
-    message?: string;
-    data?: { presigned_url?: string };
-  };
-  if (envelope.code !== 0 || envelope.data?.presigned_url === undefined)
-    throw new Error(`Dump signing failed: ${envelope.code ?? 'invalid'} ${envelope.message ?? ''}`);
-
-  return new URL(envelope.data.presigned_url);
+  const result = await client.request({
+    path: url.pathname,
+    schema: z.object({ presigned_url: z.string().url() }),
+  });
+  return new URL(result.data.presigned_url);
 }
 
 /**
@@ -244,12 +238,13 @@ export async function fetchFuyaoDump(options: FetchFuyaoDumpOptions): Promise<Fe
     ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
 
   let lastError: unknown;
+  const authRefreshBudget = { used: false };
   // 最多尝试 2 次
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       throwIfCancelled(options.signal);
       // 第一步：获取预签名下载 URL
-      const signedUrl = await signDump(options, fetchImplementation);
+      const signedUrl = await signDump(options, fetchImplementation, authRefreshBudget);
       // 第二步：下载文件，保存为 {kind}.parquet
       const target = path.join(options.cacheDir, `${options.kind}.parquet`);
       const downloaded = await downloadDump(
@@ -265,6 +260,7 @@ export async function fetchFuyaoDump(options: FetchFuyaoDumpOptions): Promise<Fe
       return { ...downloaded, releaseId: releaseId(signedUrl) };
     } catch (error) {
       if (options.signal?.aborted === true) throw cancelledError();
+      if (error instanceof CliError && !error.retryable) throw error;
       lastError = error;
       // 第一次失败后等待 250ms 再重试
       if (attempt === 0) {

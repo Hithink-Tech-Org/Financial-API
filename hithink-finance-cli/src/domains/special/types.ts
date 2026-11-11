@@ -6,7 +6,8 @@
  */
 export interface SpecialDataRecord {
   /** 同花顺股票代码 */
-  thscode?: string;
+  thscode?: string | null;
+  name?: string | null;
   /** 其他动态字段（按数据类型变化：limit_status, reason, rank, turnover_rate 等） */
   [field: string]: unknown;
 }

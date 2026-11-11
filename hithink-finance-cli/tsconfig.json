@@ -10,6 +10,7 @@
     "sourceMap": true,
     "removeComments": true,
     "strict": true,
+    "noEmitOnError": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,

@@ -21,7 +21,7 @@ import math
 import re
 import time
 from dataclasses import dataclass
-from datetime import date as Date, datetime, timezone
+from datetime import date as Date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Literal, Optional
 
@@ -116,7 +116,22 @@ def _token() -> str:
     return tok
 
 
-def _get(path: str, params: dict[str, Any]) -> Any:
+def _validate_batch_payload(data: Any, *, historical: bool) -> None:
+    fields = {"interval", "adjust", "item"} if historical else {"item"}
+    if not isinstance(data, dict) or set(data) != fields or not isinstance(data["item"], list):
+        raise RuntimeError("Batch response does not match the grouped result contract")
+    if historical and (data["interval"] not in ("1d", "1w", "1mo") or data["adjust"] not in (None, "none", "forward", "backward")):
+        raise RuntimeError("Batch history metadata does not match the grouped result contract")
+    for group in data["item"]:
+        if (not isinstance(group, dict) or set(group) != {"thscode", "timestamp", "item"}
+                or not isinstance(group["thscode"], str)
+                or (group["timestamp"] is not None and type(group["timestamp"]) is not int)
+                or not isinstance(group["item"], list)
+                or any(not isinstance(row, dict) for row in group["item"])):
+            raise RuntimeError("Batch group does not match the grouped result contract")
+
+
+def _get(path: str, params: dict[str, Any], *, batch: bool = False) -> Any:
     """Low-level GET with retry on RETRY_CODES / network errors. Returns the
     response envelope `data` payload; raises FuyaoApiError on business failure.
     """
@@ -124,7 +139,8 @@ def _get(path: str, params: dict[str, Any]) -> Any:
     clean_params = {k: v for k, v in params.items() if v is not None}
     headers = {"X-api-key": _token()}
     last_exc: Optional[Exception] = None
-    for attempt in range(MAX_RETRIES):
+    attempts = 1 if batch else MAX_RETRIES
+    for attempt in range(attempts):
         try:
             resp = _session().get(
                 url,
@@ -135,14 +151,18 @@ def _get(path: str, params: dict[str, Any]) -> Any:
             resp.raise_for_status()
             payload = resp.json()
         except (requests.ConnectionError, requests.Timeout) as exc:
+            if batch:
+                raise
             last_exc = exc
             time.sleep(RETRY_BASE_SECONDS * (2**attempt))
             continue
         code = payload.get("code", -1)
+        data = payload.get("data")
         if code == 0:
-            data = payload.get("data")
+            if batch:
+                _validate_batch_payload(data, historical=path.endswith("/historical-batch"))
             return {} if data is None else data
-        if code in RETRY_CODES and attempt < MAX_RETRIES - 1:
+        if code in RETRY_CODES and attempt < attempts - 1:
             time.sleep(RETRY_BASE_SECONDS * (2**attempt))
             continue
         raise FuyaoApiError(
@@ -167,6 +187,38 @@ def _validate_thscode(thscode: str) -> None:
         )
     if "," in thscode:
         raise ValueError("single-thscode endpoint does not accept comma-separated input")
+
+
+def _batch_codes(thscodes: str | Iterable[str], maximum: int) -> str:
+    tokens = thscodes.split(",") if isinstance(thscodes, str) else list(thscodes)
+    if not 1 <= len(tokens) <= maximum:
+        raise ValueError(f"thscodes must contain 1 to {maximum} raw tokens")
+    if any(not isinstance(token, str) or not re.fullmatch(r"[A-Z0-9]+\.[A-Z0-9]+", token.strip(), re.IGNORECASE) for token in tokens):
+        raise ValueError("thscodes must be comma-separated complete security codes")
+    return ",".join(dict.fromkeys(token.strip().upper() for token in tokens))
+
+
+def _calendar_year_limit_ms(start_ms: int, years: int) -> int:
+    start = datetime.fromtimestamp(start_ms / 1000, tz=timezone(timedelta(hours=8)))
+    try:
+        end = start.replace(year=start.year + years)
+    except ValueError:
+        end = start.replace(year=start.year + years, day=28)
+    return int(end.timestamp() * 1000)
+
+
+def _recent_index_lower_bound_ms() -> int:
+    today = datetime.now(timezone(timedelta(hours=8))).replace(hour=0, minute=0, second=0, microsecond=0)
+    return _calendar_year_limit_ms(int(today.timestamp() * 1000), -5)
+
+
+def _batch_history_range(start_ms: int, end_ms: int, years: int | None) -> None:
+    if type(start_ms) is not int or type(end_ms) is not int or start_ms < 0 or end_ms < start_ms:
+        raise ValueError("start_ms / end_ms must be nonnegative integer milliseconds with end_ms >= start_ms")
+    if years is not None and end_ms > _calendar_year_limit_ms(start_ms, years):
+        raise ValueError(f"history window must not exceed {years} calendar years")
+    if years is None and start_ms < _recent_index_lower_bound_ms():
+        raise ValueError("index history is available for the recent five calendar years")
 
 
 def _validate_period(period: str) -> None:
@@ -218,7 +270,8 @@ def _five_year_limit_ms(start_ms: int) -> int:
 
 
 def _validate_recent_or_range(
-    limit: int | None, start_ms: int | None, end_ms: int | None
+    limit: int | None, start_ms: int | None, end_ms: int | None,
+    *, calendar_year_window: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Returns ('recent', {'limit': N}) or ('range', {'start': ms, 'end': ms})."""
     has_range = (start_ms is not None) or (end_ms is not None)
@@ -232,7 +285,9 @@ def _validate_recent_or_range(
     if has_range:
         if end_ms < start_ms:  # type: ignore[operator]
             raise ValueError("financials: end_ms must be >= start_ms")
-        if end_ms - start_ms > TEN_YEARS_MS:  # type: ignore[operator]
+        maximum_end = (_calendar_year_limit_ms(start_ms, 10) if calendar_year_window
+                       else start_ms + TEN_YEARS_MS)
+        if end_ms > maximum_end:
             raise ValueError("financials: window must be <= 10 years")
         return "range", {"start": start_ms, "end": end_ms}
     if has_limit:
@@ -756,47 +811,107 @@ def index_prices_historical(
     start_ms: int,
     end_ms: int,
     *,
-    interval: Literal["1d", "1w", "1mo"] = "1d",
+    interval: Literal["1d"] = "1d",
 ) -> list[dict]:
-    """Index historical K-line for a single thscode. Auto-slices >10y windows.
+    """Index historical K-line for a single thscode within the recent five years.
 
     Indices have no adjust / offset semantics; both are absent from the upstream contract.
     """
     _validate_thscode(thscode)
-    if interval not in ("1d", "1w", "1mo"):
-        raise ValueError(f"interval must be one of 1d/1w/1mo; got {interval!r}")
-    if not isinstance(start_ms, int) or not isinstance(end_ms, int):
-        raise ValueError("start_ms / end_ms must be int milliseconds")
-    if end_ms < start_ms:
-        raise ValueError("end_ms must be >= start_ms")
-
-    slices: list[tuple[int, int]] = []
-    cur = start_ms
-    while cur < end_ms:
-        nxt = min(cur + TEN_YEARS_MS, end_ms)
-        slices.append((cur, nxt))
-        cur = nxt + 1
-
-    all_bars: list[dict] = []
+    if interval != "1d":
+        raise ValueError(f"index interval must be 1d; got {interval!r}")
+    _batch_history_range(start_ms, end_ms, None)
+    data = _get(
+        "/api/a-share-index/prices/historical",
+        {"thscode": thscode, "interval": interval, "start": start_ms, "end": end_ms},
+    )
     seen: set[int] = set()
-    for s, e in slices:
-        data = _get(
-            "/api/a-share-index/prices/historical",
-            {"thscode": thscode, "interval": interval, "start": s, "end": e},
-        )
-        for bar in data.get("item", []):
-            d = bar.get("date_ms")
-            if d in seen:
-                continue
-            seen.add(d)
-            all_bars.append(bar)
-    all_bars.sort(key=lambda b: b.get("date_ms", 0))
-    return all_bars
+    bars: list[dict] = []
+    for bar in data.get("item", []):
+        date_ms = bar.get("date_ms")
+        if date_ms not in seen:
+            seen.add(date_ms)
+            bars.append(bar)
+    bars.sort(key=lambda bar: bar.get("date_ms", 0))
+    return bars
 
 
 # ---------------------------------------------------------------------------
 # 15-21. Fund profile, performance, holders, and exchange market data
 # ---------------------------------------------------------------------------
+
+
+def prices_historical_batch(
+    thscodes: str | Iterable[str], start_ms: int, end_ms: int, *,
+    interval: Literal["1d", "1w", "1mo"] = "1d",
+    adjust: Literal["none", "forward", "backward"] = "forward",
+) -> dict[str, Any]:
+    """Return grouped A-share history from one batch request (at most ten raw codes)."""
+    codes = _batch_codes(thscodes, 10)
+    _batch_history_range(start_ms, end_ms, 10)
+    _validate_adjust(adjust)
+    if interval not in ("1d", "1w", "1mo"):
+        raise ValueError("interval must be one of 1d/1w/1mo")
+    return _get("/api/a-share/prices/historical-batch", {
+        "thscodes": codes, "start": start_ms, "end": end_ms, "interval": interval, "adjust": adjust,
+    }, batch=True)
+
+
+def index_prices_historical_batch(
+    thscodes: str | Iterable[str], start_ms: int, end_ms: int, *, interval: Literal["1d"] = "1d",
+) -> dict[str, Any]:
+    """Return grouped daily index history for the recent five calendar years."""
+    codes = _batch_codes(thscodes, 10)
+    _batch_history_range(start_ms, end_ms, None)
+    if interval != "1d":
+        raise ValueError("interval must be 1d")
+    return _get("/api/a-share-index/prices/historical-batch", {
+        "thscodes": codes, "start": start_ms, "end": end_ms, "interval": interval,
+    }, batch=True)
+
+
+def fund_market_historical_batch(
+    thscodes: str | Iterable[str], start_ms: int, end_ms: int, *, interval: Literal["1d"] = "1d",
+) -> dict[str, Any]:
+    """Return grouped daily ETF history in a window of at most five calendar years."""
+    codes = _batch_codes(thscodes, 10)
+    _batch_history_range(start_ms, end_ms, 5)
+    if interval != "1d":
+        raise ValueError("interval must be 1d")
+    return _get("/api/fund/market/historical-batch", {
+        "thscodes": codes, "start": start_ms, "end": end_ms, "interval": interval,
+    }, batch=True)
+
+
+def _financials_batch(
+    endpoint: str, thscodes: str | Iterable[str], period: str,
+    limit: int | None, start_ms: int | None, end_ms: int | None,
+) -> dict[str, Any]:
+    codes = _batch_codes(thscodes, 10)
+    _validate_period(period)
+    _, mode = _validate_recent_or_range(limit, start_ms, end_ms, calendar_year_window=True)
+    return _get(endpoint, {"thscodes": codes, "period": period, **mode}, batch=True)
+
+
+def financials_income_statements_batch(
+    thscodes: str | Iterable[str], *, period: Literal["annual", "quarterly"] = "annual",
+    limit: int | None = None, start_ms: int | None = None, end_ms: int | None = None,
+) -> dict[str, Any]:
+    return _financials_batch("/api/a-share/financials/income-statements-batch", thscodes, period, limit, start_ms, end_ms)
+
+
+def financials_balance_sheets_batch(
+    thscodes: str | Iterable[str], *, period: Literal["annual", "quarterly"] = "annual",
+    limit: int | None = None, start_ms: int | None = None, end_ms: int | None = None,
+) -> dict[str, Any]:
+    return _financials_batch("/api/a-share/financials/balance-sheets-batch", thscodes, period, limit, start_ms, end_ms)
+
+
+def financials_cash_flow_statements_batch(
+    thscodes: str | Iterable[str], *, period: Literal["annual", "quarterly"] = "annual",
+    limit: int | None = None, start_ms: int | None = None, end_ms: int | None = None,
+) -> dict[str, Any]:
+    return _financials_batch("/api/a-share/financials/cash-flow-statements-batch", thscodes, period, limit, start_ms, end_ms)
 
 
 def _fund_detail(path: str, thscode: str) -> dict[str, Any]:
@@ -867,10 +982,8 @@ def fund_holders_detail(
 
 
 def fund_market_snapshot(thscode: str) -> dict[str, Any]:
-    """Market snapshot for one exchange-traded ETF/LOF target."""
-    if isinstance(thscode, str) and "," in thscode:
-        raise ValueError("single-thscode endpoint does not accept comma-separated input")
-    normalized = _validate_exchange_fund_code(thscode)
+    """Flat market snapshots for up to 100 raw ETF/LOF codes in thscode CSV."""
+    normalized = _batch_codes(thscode, 100)
     return _get("/api/fund/market/snapshot", {"thscode": normalized})
 
 
@@ -1503,21 +1616,23 @@ def _normalize_a_share_thscode(thscode: str) -> str:
 
 def special_data_skyrocket_list(
     period: Literal["day", "hour"] = "day",
+    limit: int = 30,
 ) -> dict[str, Any]:
     """Current skyrocket ranking for the day or hour period."""
     return _get(
         "/api/a-share/special-data/skyrocket-list",
-        {"period": _normalize_hot_list_period(period)},
+        {"period": _normalize_hot_list_period(period), "limit": _business_integer(limit, "limit", 1, 100)},
     )
 
 
 def special_data_hot_stock_list(
     period: Literal["day", "hour"] = "day",
+    limit: int = 30,
 ) -> dict[str, Any]:
     """Current hot-stock ranking for the day or hour period."""
     return _get(
         "/api/a-share/special-data/hot-stock-list",
-        {"period": _normalize_hot_list_period(period)},
+        {"period": _normalize_hot_list_period(period), "limit": _business_integer(limit, "limit", 1, 100)},
     )
 
 
@@ -1589,6 +1704,134 @@ def _derivative_date_range(start_date: str, end_date: str) -> tuple[str, str]:
     if start > end:
         raise ValueError("start_date must be before or equal to end_date")
     return start_date, end_date
+
+
+def _business_integer(value: int, field: str, minimum: int = 1, maximum: int = 2147483647) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ValueError(f"{field} must be an integer between {minimum} and {maximum}")
+    return value
+
+
+def _business_choice(value: Any, field: str, choices: tuple[Any, ...]) -> Any:
+    if value not in choices or isinstance(value, bool):
+        raise ValueError(f"{field} must be one of {choices}")
+    return value
+
+
+def _business_text(value: str, field: str, maximum: int) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+        raise ValueError(f"{field} must contain 1 to {maximum} characters")
+    return value
+
+
+def _business_date(value: str | None) -> str | None:
+    if value is not None:
+        _parse_iso_date(value, "date")
+    return value
+
+
+def special_data_limit_up_statistics(date: str | None = None) -> dict[str, Any]:
+    """Market summary and board counts for one trading date."""
+    return _get("/api/a-share/special-data/limit-up-statistics", {"date": _business_date(date)})
+
+
+def special_data_dragon_tiger_stock_institution(
+    thscode: str, date: str | None = None, range_days: Literal[1, 3] | None = None,
+) -> dict[str, Any]:
+    return _get("/api/a-share/special-data/dragon-tiger-stock-institution", {
+        "thscode": _normalize_a_share_thscode(thscode), "date": _business_date(date),
+        "range_days": None if range_days is None else _business_choice(_business_integer(range_days, "range_days", 1, 3), "range_days", (1, 3)),
+    })
+
+
+def special_data_dragon_tiger_department_classic_record(department_id: str) -> dict[str, Any]:
+    return _get("/api/a-share/special-data/dragon-tiger-department-classic-record", {
+        "department_id": _business_text(department_id, "department_id", 128),
+    })
+
+
+def special_data_dragon_tiger_department_history(
+    department_id: str, page: int = 1, size: int = 30,
+    min_net_buy_amount: int | None = None,
+    sort_field: Literal["trade_date", "change_ratio", "net_buy_amount"] = "trade_date",
+    sort_dir: Literal["asc", "desc"] = "desc",
+) -> dict[str, Any]:
+    """Return one source page, preserving nullable codes/names and row order."""
+    return _get("/api/a-share/special-data/dragon-tiger-department-history", {
+        "department_id": _business_text(department_id, "department_id", 128),
+        "page": _business_integer(page, "page"), "size": _business_integer(size, "size", 1, 30),
+        "min_net_buy_amount": None if min_net_buy_amount is None else _business_choice(_business_integer(min_net_buy_amount, "min_net_buy_amount"), "min_net_buy_amount", (5000000, 30000000, 50000000, 100000000)),
+        "sort_field": _business_choice(sort_field, "sort_field", ("trade_date", "change_ratio", "net_buy_amount")),
+        "sort_dir": _business_choice(sort_dir, "sort_dir", ("asc", "desc")),
+    })
+
+
+def special_data_abnormal_monitor_list(
+    state: Literal["current", "history"] = "current", page: int = 1, size: int = 30,
+) -> dict[str, Any]:
+    """Severe anomaly records; codes and names may be null or empty."""
+    return _get("/api/a-share/special-data/abnormal-monitor-list", {
+        "state": _business_choice(state, "state", ("current", "history")),
+        "page": _business_integer(page, "page"), "size": _business_integer(size, "size", 1, 30),
+    })
+
+
+def special_data_auction_stock_opportunities(
+    date: str | None = None, warn_types: str | None = None,
+    market: Literal["a_share", "sh_sz_main", "sh_a", "sz_a", "gem", "star"] = "a_share",
+    exclude_st: bool = False, thscodes: Iterable[str] | None = None,
+    sort_by: Literal["warn_time", "warn_type"] = "warn_time", sort_order: Literal["asc", "desc"] = "desc",
+    page: int = 1, size: int = 20,
+) -> dict[str, Any]:
+    """Real-time/history opportunities for an available date, without stock deduplication."""
+    if type(exclude_st) is not bool:
+        raise ValueError("exclude_st must be a boolean")
+    if warn_types is not None:
+        if not isinstance(warn_types, str) or any(not re.fullmatch(r"687(?:1[0-9]|2[0-7])", token.strip()) for token in warn_types.split(',')):
+            raise ValueError("warn_types must contain types 68710 through 68727")
+    codes = None
+    if thscodes is not None:
+        raw = thscodes.split(',') if isinstance(thscodes, str) else list(thscodes)
+        if not 1 <= len(raw) <= 50:
+            raise ValueError("thscodes must contain 1 to 50 raw tokens")
+        codes = ','.join(dict.fromkeys(_normalize_a_share_thscode(code) for code in raw))
+    return _get("/api/a-share/special-data/auction-stock-opportunities", {
+        "date": _business_date(date), "warn_types": warn_types,
+        "market": _business_choice(market, "market", ("a_share", "sh_sz_main", "sh_a", "sz_a", "gem", "star")),
+        "exclude_st": str(exclude_st).lower(), "thscodes": codes,
+        "sort_by": _business_choice(sort_by, "sort_by", ("warn_time", "warn_type")),
+        "sort_order": _business_choice(sort_order, "sort_order", ("asc", "desc")),
+        "page": _business_integer(page, "page"), "size": _business_integer(size, "size", 1, 20),
+    })
+
+
+def special_data_auction_opportunity_dates() -> dict[str, Any]:
+    return _get("/api/a-share/special-data/auction-opportunity-dates", {})
+
+
+def a_share_ipo_calendar_list(
+    market: Literal["sh_sz", "bj"], status: Literal["upcoming", "subscribable", "awaiting_listing"],
+) -> dict[str, Any]:
+    return _get("/api/a-share/ipo/calendar-list", {
+        "market": _business_choice(market, "market", ("sh_sz", "bj")),
+        "status": _business_choice(status, "status", ("upcoming", "subscribable", "awaiting_listing")),
+    })
+
+
+def hk_share_ipo_application_list(page: int = 1) -> dict[str, Any]:
+    return _get("/api/hk-share/ipo/application-list", {"page": _business_integer(page, "page")})
+
+
+def hk_share_ipo_calendar_list(status: Literal["subscribable", "awaiting_listing"]) -> dict[str, Any]:
+    return _get("/api/hk-share/ipo/calendar-list", {
+        "status": _business_choice(status, "status", ("subscribable", "awaiting_listing")),
+    })
+
+
+def hk_share_ipo_issue_detail(issue_code: str) -> dict[str, Any]:
+    return _get("/api/hk-share/ipo/issue-detail", {
+        "issue_code": _business_text(issue_code, "issue_code", 32),
+    })
 
 
 def _derivative_session(session: str) -> str:
@@ -1726,7 +1969,106 @@ def options_daily(thscode: str, *, start: int | None = None, end: int | None = N
     return _derivative_daily("/api/options/prices/daily", thscode, start, end)
 
 
+def _news_text(value: str, field: str, *, segment: bool = False) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be non-empty text")
+    if segment and ('/' in value or '\\' in value):
+        raise ValueError(f"{field} must be one path segment")
+    return value
+
+
+def _news_integer(value: int, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not -(2**63) <= value < 2**63:
+        raise ValueError(f"{field} must be a signed 64-bit integer")
+    return value
+
+
+def _news_seq(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]+", value) or int(value) >= 2**63:
+        raise ValueError("seq must be a decimal string within signed 64-bit range")
+    return value
+
+
+def news_article_detail(client_type: str, encoded_seq: str) -> dict[str, Any]:
+    """Query article detail by an opaque identifier; preserve HTML and nulls."""
+    _news_text(client_type, "client_type", segment=True)
+    _news_text(encoded_seq, "encoded_seq", segment=True)
+    if client_type.upper() not in {"WEB", "WEB_ENCRYPTED", "PC", "PC_LIST"}:
+        raise ValueError("client_type must be WEB, WEB_ENCRYPTED, PC or PC_LIST")
+    return _get("/api/news/article/detail", {"client_type": client_type, "encoded_seq": encoded_seq})
+
+
+def news_flash_list(tag_id: int, seq: str) -> dict[str, Any]:
+    """Query one flash page; seq is an exact decimal string, initially '0'."""
+    _news_integer(tag_id, "tag_id")
+    _news_seq(seq)
+    return _get("/api/news/flash/list", {"tag_id": tag_id, "seq": seq})
+
+
+def news_flash_refresh(tag_id: int, seq: str, create_time_ms: int) -> dict[str, Any]:
+    """Refresh flashes using a millisecond creation time divisible by 1000."""
+    _news_integer(tag_id, "tag_id")
+    _news_seq(seq)
+    _news_integer(create_time_ms, "create_time_ms")
+    if create_time_ms % 1000:
+        raise ValueError("create_time_ms must be divisible by 1000")
+    return _get("/api/news/flash/refresh", {"tag_id": tag_id, "seq": seq, "create_time_ms": create_time_ms})
+
+
+def news_notice_detail(seq: str) -> dict[str, Any]:
+    """Query announcement detail and its structured interpretation."""
+    _news_text(seq, "seq", segment=True)
+    return _get("/api/news/notice/detail", {"seq": seq})
+
+
+def news_topic_hot_list(tab_id: int, cursor: str | None = None, limit: int = 10,
+                        important_only: bool = False) -> dict[str, Any]:
+    """Query one topic page; pass next_cursor unchanged for subsequent pages."""
+    _news_integer(tab_id, "tab_id")
+    _news_integer(limit, "limit")
+    if not 1 <= limit <= 10:
+        raise ValueError("limit must be within 1..10")
+    if cursor is not None and not isinstance(cursor, str):
+        raise ValueError("cursor must be text")
+    if not isinstance(important_only, bool):
+        raise ValueError("important_only must be boolean")
+    return _get("/api/news/topic/hot-list", {"tab_id": tab_id, "cursor": cursor, "limit": limit, "important_only": str(important_only).lower()})
+
+
+def news_anomaly_analysis(begin_date: str, end_date: str, thscode: str | None = None) -> dict[str, Any]:
+    """Query a date range unchanged; retain was_truncated and source time values."""
+    first = _parse_iso_date(begin_date, "begin_date")
+    last = _parse_iso_date(end_date, "end_date")
+    if first > last:
+        raise ValueError("begin_date must not exceed end_date")
+    if thscode is not None:
+        _news_text(thscode, "thscode")
+    return _get("/api/news/anomaly/analysis", {"begin_date": begin_date, "end_date": end_date, "thscode": thscode})
+
+
+def news_stock_timeline_list(thscode: str, offset: str,
+                             size: int | None = None) -> dict[str, Any]:
+    """Query one timeline page; omit size to use the service's default behavior."""
+    for field, value in (("thscode", thscode), ("offset", offset)):
+        _news_text(value, field)
+    if not re.fullmatch(r"[0-9A-Za-z]+\.[A-Za-z]+", thscode):
+        raise ValueError("thscode must be a single complete security code")
+    if size is not None:
+        _news_integer(size, "size")
+        if not 1 <= size <= 100:
+            raise ValueError("size must be within 1..100")
+    return _get("/api/news/stock/timeline-list", {"thscode": thscode, "offset": offset, "size": size})
+
+
 __all__ = [
+    "prices_historical_batch",
+    "index_prices_historical_batch",
+    "fund_market_historical_batch",
+    "financials_income_statements_batch",
+    "financials_balance_sheets_batch",
+    "financials_cash_flow_statements_batch",
+    "news_article_detail", "news_flash_list", "news_flash_refresh", "news_notice_detail",
+    "news_topic_hot_list", "news_anomaly_analysis", "news_stock_timeline_list",
     "FuyaoApiError",
     "tickers_search",
     "tickers_list",
@@ -1786,6 +2128,17 @@ __all__ = [
     "special_data_anomaly_analysis_list",
     "special_data_anomaly_analysis_stock",
     "special_data_skyrocket_list",
+    "special_data_limit_up_statistics",
+    "special_data_dragon_tiger_stock_institution",
+    "special_data_dragon_tiger_department_classic_record",
+    "special_data_dragon_tiger_department_history",
+    "special_data_abnormal_monitor_list",
+    "special_data_auction_stock_opportunities",
+    "special_data_auction_opportunity_dates",
+    "a_share_ipo_calendar_list",
+    "hk_share_ipo_application_list",
+    "hk_share_ipo_calendar_list",
+    "hk_share_ipo_issue_detail",
     "special_data_hot_stock_list",
     "special_data_hot_stock_list_history",
     "special_data_hot_stock_rank_trend",

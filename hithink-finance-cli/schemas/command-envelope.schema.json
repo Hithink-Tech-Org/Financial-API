@@ -3,9 +3,19 @@
   "title": "hithink-finance command envelope",
   "oneOf": [
     {
+      "properties": {
+        "ok": {
+          "const": true
+        }
+      },
       "required": ["ok", "command", "data", "meta"]
     },
     {
+      "properties": {
+        "ok": {
+          "const": false
+        }
+      },
       "required": ["ok", "command", "error", "meta"]
     }
   ]

@@ -14,13 +14,28 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from requests import RequestException
+
 _SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Resolve sibling modules (fuyao_client) from this script's own directory.
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 from fuyao_client import (  # noqa: E402
+    news_article_detail,
+    news_flash_list,
+    news_flash_refresh,
+    news_notice_detail,
+    news_topic_hot_list,
+    news_anomaly_analysis,
+    news_stock_timeline_list,
     FuyaoApiError,
+    prices_historical_batch,
+    index_prices_historical_batch,
+    fund_market_historical_batch,
+    financials_income_statements_batch,
+    financials_balance_sheets_batch,
+    financials_cash_flow_statements_batch,
     a_share_auction_short_term_benchmark,
     a_share_auction_snapshot,
     a_share_valuations_snapshot,
@@ -107,6 +122,17 @@ from fuyao_client import (  # noqa: E402
     special_data_hot_stock_list_history,
     special_data_hot_stock_rank_trend,
     special_data_skyrocket_list,
+    special_data_limit_up_statistics,
+    special_data_dragon_tiger_stock_institution,
+    special_data_dragon_tiger_department_classic_record,
+    special_data_dragon_tiger_department_history,
+    special_data_abnormal_monitor_list,
+    special_data_auction_stock_opportunities,
+    special_data_auction_opportunity_dates,
+    a_share_ipo_calendar_list,
+    hk_share_ipo_application_list,
+    hk_share_ipo_calendar_list,
+    hk_share_ipo_issue_detail,
     tickers_list,
     tickers_search,
 )
@@ -194,16 +220,25 @@ def cmd_corp_actions(args):
     )
 
 
-def _financials_args(fn):
+def _financials_args(fn, *, batch: bool = False):
     def _run(args):
         return fn(
-            thscode=args.thscode,
+            **({"thscodes": args.thscodes} if batch else {"thscode": args.thscode}),
             period=args.period,
             limit=args.limit,
             start_ms=args.start_ms,
             end_ms=args.end_ms,
         )
 
+    return _run
+
+
+def _historical_batch_args(fn, *, adjust: bool = False):
+    def _run(args):
+        return fn(
+            thscodes=args.thscodes, start_ms=args.start_ms, end_ms=args.end_ms,
+            interval=args.interval, **({"adjust": args.adjust} if adjust else {}),
+        )
     return _run
 
 
@@ -429,11 +464,11 @@ def cmd_anomaly_analysis_stock(args):
 
 
 def cmd_skyrocket_list(args):
-    return special_data_skyrocket_list(args.period)
+    return special_data_skyrocket_list(args.period, limit=args.limit)
 
 
 def cmd_hot_stock_list(args):
-    return special_data_hot_stock_list(args.period)
+    return special_data_hot_stock_list(args.period, limit=args.limit)
 
 
 def cmd_hot_stock_list_history(args):
@@ -472,9 +507,9 @@ def _no_args(fn):
 # ---------------------------------------------------------------------------
 
 
-def _add_financials_subparser(sub, name: str, help_text: str, handler):
+def _add_financials_subparser(sub, name: str, help_text: str, handler, *, batch: bool = False):
     p = sub.add_parser(name, help=help_text)
-    p.add_argument("--thscode", required=True)
+    p.add_argument("--thscodes" if batch else "--thscode", required=True)
     p.add_argument("--period", default="annual", choices=["annual", "quarterly"])
     grp_mode = p.add_argument_group(
         "取数模式（二选一，互斥）",
@@ -494,6 +529,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--compact", action="store_true", help="emit single-line JSON")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    for name, fn, market in (
+        ("prices-historical-batch", prices_historical_batch, True),
+        ("index-historical-batch", index_prices_historical_batch, False),
+        ("fund-historical-batch", fund_market_historical_batch, False),
+    ):
+        p = sub.add_parser(name, help="grouped history for at most 10 raw thscodes")
+        p.add_argument("--thscodes", required=True)
+        p.add_argument("--start-ms", type=int, required=True)
+        p.add_argument("--end-ms", type=int, required=True)
+        p.add_argument("--interval", choices=["1d", "1w", "1mo"] if market else ["1d"], default="1d")
+        if market:
+            p.add_argument("--adjust", choices=["none", "forward", "backward"], default="forward")
+        p.set_defaults(func=_historical_batch_args(fn, adjust=market))
+
+    for name, fn in (
+        ("financials-income-batch", financials_income_statements_batch),
+        ("financials-balance-batch", financials_balance_sheets_batch),
+        ("financials-cashflow-batch", financials_cash_flow_statements_batch),
+    ):
+        _add_financials_subparser(sub, name, "grouped statements for at most 10 raw thscodes", _financials_args(fn, batch=True), batch=True)
 
     # tickers-search
     p = sub.add_parser("tickers-search", help="resolve name/code into thscode (local cache by default)")
@@ -637,12 +693,12 @@ def build_parser() -> argparse.ArgumentParser:
     # index-historical
     p = sub.add_parser(
         "index-historical",
-        help="index historical K-line for a single thscode; auto-slices windows >10y",
+        help="index historical K-line for a single thscode within the recent five years",
     )
     p.add_argument("--thscode", required=True)
     p.add_argument("--start-ms", dest="start_ms", type=int, required=True)
     p.add_argument("--end-ms", dest="end_ms", type=int, required=True)
-    p.add_argument("--interval", default="1d", choices=["1d", "1w", "1mo"])
+    p.add_argument("--interval", default="1d", choices=["1d"])
     p.set_defaults(func=cmd_index_historical)
 
     # fund profile/performance
@@ -683,7 +739,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--nav-type", dest="nav_type", default="unit,adj", choices=["unit", "adj", "unit,adj"])
     p.set_defaults(func=cmd_fund_nav)
 
-    p = sub.add_parser("fund-snapshot", help="ETF/LOF market snapshot")
+    p = sub.add_parser("fund-snapshot", help="flat ETF/LOF market snapshots; up to 100 raw codes in --thscode CSV")
     p.add_argument("--thscode", required=True, help="single ETF/LOF thscode")
     p.set_defaults(func=cmd_fund_snapshot)
 
@@ -920,6 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--period", default="day", choices=["day", "hour"])
     p.set_defaults(func=cmd_skyrocket_list)
+    p.add_argument("--limit", type=int, default=30, help="1 to 100 rows")
 
     p = sub.add_parser(
         "hot-stock-list",
@@ -927,6 +984,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--period", default="day", choices=["day", "hour"])
     p.set_defaults(func=cmd_hot_stock_list)
+    p.add_argument("--limit", type=int, default=30, help="1 to 100 rows")
 
     p = sub.add_parser(
         "hot-stock-list-history",
@@ -957,6 +1015,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date", help="optional YYYY-MM-DD trade date within one year")
     p.set_defaults(func=cmd_dragon_tiger_list)
 
+    business_commands = [
+        ("news-article-detail", news_article_detail, [("client-type", {"required": True}), ("encoded-seq", {"required": True})]),
+        ("news-flash-list", news_flash_list, [("tag-id", {"type": int, "required": True}), ("seq", {"required": True})]),
+        ("news-flash-refresh", news_flash_refresh, [("tag-id", {"type": int, "required": True}), ("seq", {"required": True}), ("create-time-ms", {"type": int, "required": True})]),
+        ("news-notice-detail", news_notice_detail, [("seq", {"required": True})]),
+        ("news-topic-hot-list", news_topic_hot_list, [("tab-id", {"type": int, "required": True}), ("cursor", {}), ("limit", {"type": int, "default": 10}), ("important-only", {"type": _boolean, "default": False})]),
+        ("news-anomaly-analysis", news_anomaly_analysis, [("begin-date", {"required": True}), ("end-date", {"required": True}), ("thscode", {})]),
+        ("news-stock-timeline-list", news_stock_timeline_list, [("thscode", {"required": True}), ("offset", {"required": True}), ("size", {"type": int})]),
+        ("limit-up-statistics", special_data_limit_up_statistics, [("date", {})]),
+        ("dragon-tiger-stock-institution", special_data_dragon_tiger_stock_institution, [("thscode", {"required": True}), ("date", {}), ("range-days", {"type": int, "choices": [1, 3]})]),
+        ("dragon-tiger-department-classic-record", special_data_dragon_tiger_department_classic_record, [("department-id", {"required": True})]),
+        ("dragon-tiger-department-history", special_data_dragon_tiger_department_history, [("department-id", {"required": True}), ("page", {"type": int, "default": 1}), ("size", {"type": int, "default": 30}), ("min-net-buy-amount", {"type": int, "choices": [5000000, 30000000, 50000000, 100000000]}), ("sort-field", {"choices": ["trade_date", "change_ratio", "net_buy_amount"], "default": "trade_date"}), ("sort-dir", {"choices": ["asc", "desc"], "default": "desc"})]),
+        ("abnormal-monitor-list", special_data_abnormal_monitor_list, [("state", {"choices": ["current", "history"], "default": "current"}), ("page", {"type": int, "default": 1}), ("size", {"type": int, "default": 30})]),
+        ("auction-stock-opportunities", special_data_auction_stock_opportunities, [("date", {}), ("warn-types", {}), ("market", {"choices": ["a_share", "sh_sz_main", "sh_a", "sz_a", "gem", "star"], "default": "a_share"}), ("exclude-st", {"action": "store_true"}), ("thscodes", {"type": lambda value: value.split(',')}), ("sort-by", {"choices": ["warn_time", "warn_type"], "default": "warn_time"}), ("sort-order", {"choices": ["asc", "desc"], "default": "desc"}), ("page", {"type": int, "default": 1}), ("size", {"type": int, "default": 20})]),
+        ("auction-opportunity-dates", special_data_auction_opportunity_dates, []),
+        ("a-share-ipo-calendar", a_share_ipo_calendar_list, [("market", {"choices": ["sh_sz", "bj"], "required": True}), ("status", {"choices": ["upcoming", "subscribable", "awaiting_listing"], "required": True})]),
+        ("hk-ipo-applications", hk_share_ipo_application_list, [("page", {"type": int, "default": 1})]),
+        ("hk-ipo-calendar", hk_share_ipo_calendar_list, [("status", {"choices": ["subscribable", "awaiting_listing"], "required": True})]),
+        ("hk-ipo-issue-detail", hk_share_ipo_issue_detail, [("issue-code", {"required": True})]),
+    ]
+    for command, handler, arguments in business_commands:
+        p = sub.add_parser(command, help=handler.__doc__ or command)
+        keys = [name.replace('-', '_') for name, _ in arguments]
+        for name, options in arguments:
+            p.add_argument('--' + name, **options)
+        p.set_defaults(func=lambda args, fn=handler, fields=keys: fn(**{key: getattr(args, key) for key in fields}))
+
     return parser
 
 
@@ -975,7 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         print(f"[fuyao input error] {e}", file=sys.stderr)
         exit_code = 3
-    except RuntimeError as e:
+    except (RuntimeError, RequestException) as e:
         print(f"[fuyao runtime error] {e}", file=sys.stderr)
         exit_code = 4
     else:

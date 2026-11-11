@@ -34,7 +34,7 @@ def test_current_hot_lists_map_period_and_return_full_data(
     function = getattr(fuyao_client, function_name)
 
     assert function("hour") == expected
-    assert calls == [(path, {"period": "hour"})]
+    assert calls == [(path, {"period": "hour", "limit": 30})]
 
 
 def test_current_hot_lists_default_to_day(monkeypatch):
@@ -49,8 +49,8 @@ def test_current_hot_lists_default_to_day(monkeypatch):
     fuyao_client.special_data_hot_stock_list()
 
     assert calls == [
-        ("/api/a-share/special-data/skyrocket-list", {"period": "day"}),
-        ("/api/a-share/special-data/hot-stock-list", {"period": "day"}),
+        ("/api/a-share/special-data/skyrocket-list", {"period": "day", "limit": 30}),
+        ("/api/a-share/special-data/hot-stock-list", {"period": "day", "limit": 30}),
     ]
 
 
@@ -218,12 +218,12 @@ def test_hot_list_cli_commands_map_arguments(monkeypatch):
     monkeypatch.setattr(
         fuyao_cli,
         "special_data_skyrocket_list",
-        lambda period: calls.append(("skyrocket", period)) or {},
+        lambda period, limit=30: calls.append(("skyrocket", period, limit)) or {},
     )
     monkeypatch.setattr(
         fuyao_cli,
         "special_data_hot_stock_list",
-        lambda period: calls.append(("hot", period)) or {},
+        lambda period, limit=30: calls.append(("hot", period, limit)) or {},
     )
     monkeypatch.setattr(
         fuyao_cli,
@@ -269,8 +269,8 @@ def test_hot_list_cli_commands_map_arguments(monkeypatch):
         args.func(args)
 
     assert calls == [
-        ("skyrocket", "hour"),
-        ("hot", "day"),
+        ("skyrocket", "hour", 30),
+        ("hot", "day", 30),
         ("history", "2026-07-01"),
         ("trend", "300033.SZ", "2026-06-01", "2026-07-01"),
         ("dragon", {"board_type": "org", "date": "2026-07-01"}),

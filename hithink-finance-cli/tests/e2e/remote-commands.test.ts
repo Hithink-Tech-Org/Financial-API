@@ -6,8 +6,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-test('every remote command exposes help without making a network request', async () => {
-  for (const capability of remoteCapabilities) {
+test.each(remoteCapabilities)(
+  '$id exposes help without making a network request',
+  async (capability) => {
     const result = await execa('node', [
       'dist/cli/main.js',
       ...capability.command,
@@ -16,8 +17,8 @@ test('every remote command exposes help without making a network request', async
       'en',
     ]);
     expect(result.stdout).toContain(`Usage: hithink-finance ${capability.command.join(' ')}`);
-  }
-}, 90_000);
+  },
+);
 
 test('executes a descriptor-backed command against a bounded local fixture', async () => {
   const server = createServer((request, response) => {
@@ -55,6 +56,51 @@ test('executes a descriptor-backed command against a bounded local fixture', asy
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('explicit remote history skips an existing unusable local database', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'finance-remote-history-'));
+  const database = path.join(directory, 'unusable.db');
+  await writeFile(database, 'not a database');
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ code: 0, message: 'ok', data: { item: [] } }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw Error('fixture unavailable');
+    const result = await execa(
+      'node',
+      [
+        'dist/cli/main.js',
+        'market',
+        'history',
+        '--thscode',
+        '600519.SH',
+        '--start-ms',
+        '1782864000000',
+        '--end-ms',
+        '1782950400000',
+        '--source',
+        'remote',
+        '--db',
+        database,
+        '--api-key-stdin',
+        '--format',
+        'json',
+      ],
+      {
+        input: 'fixture-key\n',
+        env: { HITHINK_FINANCE_FUYAO_BASE_URL: `http://127.0.0.1:${address.port}` },
+      },
+    );
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, meta: { source: 'remote' } });
+    expect(await readFile(database, 'utf8')).toBe('not a database');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

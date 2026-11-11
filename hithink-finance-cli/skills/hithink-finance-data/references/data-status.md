@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-- 按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。
+- 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema data.status --format json` 确认参数，未说明的组合规则再看命令 `--help`。
 - 查看库路径和 schema 版本；该命令可创建缺失数据库，严格只读任务须先用文件系统确认目标存在。
 

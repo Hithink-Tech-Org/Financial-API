@@ -1,6 +1,84 @@
 {
   "schema_version": "1",
+  "global_options": [
+    {
+      "flags": "--max-rows <count>",
+      "description": "table preview rows; 0 shows all returned rows",
+      "default_value": 20
+    },
+    {
+      "flags": "--columns <fields>",
+      "description": "table fields, comma-separated; * shows all fields"
+    }
+  ],
   "capabilities": [
+    {
+      "id": "auth.login",
+      "command": ["auth", "login"],
+      "description": "Validate, save and activate a global credential",
+      "options": [
+        {
+          "flags": "--method <method>",
+          "choices": ["oauth", "api-key"]
+        },
+        {
+          "flags": "--api-key-stdin"
+        },
+        {
+          "flags": "--background"
+        },
+        {
+          "flags": "--no-browser"
+        },
+        {
+          "flags": "--replace"
+        }
+      ],
+      "source": "authentication"
+    },
+    {
+      "id": "auth.logout",
+      "command": ["auth", "logout"],
+      "description": "End the active session locally, then attempt remote revocation",
+      "options": [
+        {
+          "flags": "--all"
+        }
+      ],
+      "source": "authentication"
+    },
+    {
+      "id": "auth.migrate",
+      "command": ["auth", "migrate"],
+      "description": "Import previous credentials into the shared file",
+      "options": [
+        {
+          "flags": "--legacy-profile <name>"
+        }
+      ],
+      "source": "authentication"
+    },
+    {
+      "id": "auth.status",
+      "command": ["auth", "status"],
+      "description": "Read local connection state without network or writes; exit 0 when connected, 3 otherwise",
+      "options": [],
+      "source": "authentication"
+    },
+    {
+      "id": "auth.use",
+      "command": ["auth", "use"],
+      "description": "Activate a saved credential",
+      "arguments": [
+        {
+          "name": "method",
+          "required": true,
+          "choices": ["oauth", "api-key"]
+        }
+      ],
+      "options": [],
+      "source": "authentication"
+    },
     {
       "id": "data.clean",
       "command": ["data", "clean"],
@@ -77,6 +155,15 @@
       "source": "remote"
     },
     {
+      "id": "financials.balance-sheet-batch",
+      "command": ["financials", "balance-sheet-batch"],
+      "endpoint": "/api/a-share/financials/balance-sheets-batch",
+      "method": "GET",
+      "paging": "none",
+      "window": "ten-years",
+      "source": "remote"
+    },
+    {
       "id": "financials.cash-flow",
       "command": ["financials", "cash-flow"],
       "endpoint": "/api/a-share/financials/cash-flow-statements",
@@ -86,9 +173,27 @@
       "source": "remote"
     },
     {
+      "id": "financials.cash-flow-batch",
+      "command": ["financials", "cash-flow-batch"],
+      "endpoint": "/api/a-share/financials/cash-flow-statements-batch",
+      "method": "GET",
+      "paging": "none",
+      "window": "ten-years",
+      "source": "remote"
+    },
+    {
       "id": "financials.income",
       "command": ["financials", "income"],
       "endpoint": "/api/a-share/financials/income-statements",
+      "method": "GET",
+      "paging": "none",
+      "window": "ten-years",
+      "source": "remote"
+    },
+    {
+      "id": "financials.income-batch",
+      "command": ["financials", "income-batch"],
+      "endpoint": "/api/a-share/financials/income-statements-batch",
       "method": "GET",
       "paging": "none",
       "window": "ten-years",
@@ -206,6 +311,15 @@
       "id": "fund.history",
       "command": ["fund", "history"],
       "endpoint": "/api/fund/market/historical",
+      "method": "GET",
+      "paging": "none",
+      "window": "five-years",
+      "source": "remote"
+    },
+    {
+      "id": "fund.history-batch",
+      "command": ["fund", "history-batch"],
+      "endpoint": "/api/fund/market/historical-batch",
       "method": "GET",
       "paging": "none",
       "window": "five-years",
@@ -613,13 +727,58 @@
       "endpoint": "/api/a-share-index/prices/historical",
       "method": "GET",
       "paging": "none",
-      "window": "ten-years",
+      "window": "five-years",
+      "source": "remote"
+    },
+    {
+      "id": "index.history-batch",
+      "command": ["index", "history-batch"],
+      "endpoint": "/api/a-share-index/prices/historical-batch",
+      "method": "GET",
+      "paging": "none",
+      "window": "five-years",
       "source": "remote"
     },
     {
       "id": "index.snapshot",
       "command": ["index", "snapshot"],
       "endpoint": "/api/a-share-index/prices/snapshot",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "ipo.a-share-calendar",
+      "command": ["ipo", "a-share-calendar"],
+      "endpoint": "/api/a-share/ipo/calendar-list",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "ipo.hk-applications",
+      "command": ["ipo", "hk-applications"],
+      "endpoint": "/api/hk-share/ipo/application-list",
+      "method": "GET",
+      "paging": "page",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "ipo.hk-calendar",
+      "command": ["ipo", "hk-calendar"],
+      "endpoint": "/api/hk-share/ipo/calendar-list",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "ipo.hk-issue-detail",
+      "command": ["ipo", "hk-issue-detail"],
+      "endpoint": "/api/hk-share/ipo/issue-detail",
       "method": "GET",
       "paging": "none",
       "window": "none",
@@ -677,6 +836,15 @@
       "source": "remote"
     },
     {
+      "id": "market.history-batch",
+      "command": ["market", "history-batch"],
+      "endpoint": "/api/a-share/prices/historical-batch",
+      "method": "GET",
+      "paging": "none",
+      "window": "ten-years",
+      "source": "remote"
+    },
+    {
       "id": "market.panel",
       "command": ["market", "panel"],
       "description": "Local capability market.panel",
@@ -686,6 +854,69 @@
       "id": "market.snapshot",
       "command": ["market", "snapshot"],
       "endpoint": "/api/a-share/prices/snapshot",
+      "method": "GET",
+      "paging": "offset",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.anomaly-analysis",
+      "command": ["news", "anomaly-analysis"],
+      "endpoint": "/api/news/anomaly/analysis",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.article-detail",
+      "command": ["news", "article-detail"],
+      "endpoint": "/api/news/article/detail",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.flash-list",
+      "command": ["news", "flash-list"],
+      "endpoint": "/api/news/flash/list",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.flash-refresh",
+      "command": ["news", "flash-refresh"],
+      "endpoint": "/api/news/flash/refresh",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.notice-detail",
+      "command": ["news", "notice-detail"],
+      "endpoint": "/api/news/notice/detail",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.stock-timeline-list",
+      "command": ["news", "stock-timeline-list"],
+      "endpoint": "/api/news/stock/timeline-list",
+      "method": "GET",
+      "paging": "offset",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "news.topic-hot-list",
+      "command": ["news", "topic-hot-list"],
+      "endpoint": "/api/news/topic/hot-list",
       "method": "GET",
       "paging": "offset",
       "window": "none",
@@ -764,6 +995,15 @@
       "source": "local"
     },
     {
+      "id": "special.abnormal-monitor",
+      "command": ["special", "abnormal-monitor"],
+      "endpoint": "/api/a-share/special-data/abnormal-monitor-list",
+      "method": "GET",
+      "paging": "page",
+      "window": "none",
+      "source": "remote"
+    },
+    {
       "id": "special.anomaly-list",
       "command": ["special", "anomaly-list"],
       "endpoint": "/api/a-share/special-data/anomaly-analysis-list",
@@ -782,9 +1022,54 @@
       "source": "remote"
     },
     {
+      "id": "special.auction-opportunities",
+      "command": ["special", "auction-opportunities"],
+      "endpoint": "/api/a-share/special-data/auction-stock-opportunities",
+      "method": "GET",
+      "paging": "page",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "special.auction-opportunity-dates",
+      "command": ["special", "auction-opportunity-dates"],
+      "endpoint": "/api/a-share/special-data/auction-opportunity-dates",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
       "id": "special.dragon-tiger",
       "command": ["special", "dragon-tiger"],
       "endpoint": "/api/a-share/special-data/dragon-tiger-list",
+      "method": "GET",
+      "paging": "none",
+      "window": "one-year",
+      "source": "remote"
+    },
+    {
+      "id": "special.dragon-tiger-department-classic-record",
+      "command": ["special", "dragon-tiger-department-classic-record"],
+      "endpoint": "/api/a-share/special-data/dragon-tiger-department-classic-record",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "special.dragon-tiger-department-history",
+      "command": ["special", "dragon-tiger-department-history"],
+      "endpoint": "/api/a-share/special-data/dragon-tiger-department-history",
+      "method": "GET",
+      "paging": "page",
+      "window": "none",
+      "source": "remote"
+    },
+    {
+      "id": "special.dragon-tiger-stock-institution",
+      "command": ["special", "dragon-tiger-stock-institution"],
+      "endpoint": "/api/a-share/special-data/dragon-tiger-stock-institution",
       "method": "GET",
       "paging": "none",
       "window": "one-year",
@@ -854,6 +1139,15 @@
       "source": "remote"
     },
     {
+      "id": "special.limit-up-statistics",
+      "command": ["special", "limit-up-statistics"],
+      "endpoint": "/api/a-share/special-data/limit-up-statistics",
+      "method": "GET",
+      "paging": "none",
+      "window": "one-year",
+      "source": "remote"
+    },
+    {
       "id": "special.skyrocket",
       "command": ["special", "skyrocket"],
       "endpoint": "/api/a-share/special-data/skyrocket-list",
@@ -888,6 +1182,18 @@
       "paging": "none",
       "window": "none",
       "source": "remote"
+    },
+    {
+      "id": "worker.status",
+      "command": ["worker", "status"],
+      "description": "Local capability worker.status",
+      "source": "local"
+    },
+    {
+      "id": "worker.stop",
+      "command": ["worker", "stop"],
+      "description": "Local capability worker.stop",
+      "source": "local"
     }
   ]
 }

@@ -2,9 +2,9 @@
 
 ## 前置条件
 
-- 按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。
+- 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema market.history --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- `--source auto` 在本地覆盖时读取本地日线；只有远端路径需要 API Key。可用 `--source local` 明确只读本地数据。
+- `--source auto` 在本地覆盖时读取本地日线；远端路径先用 `auth status` 复用当前启用的 OAuth 或 API Key。可用 `--source local` 明确只读本地数据。
 
 ## 命令
 
@@ -15,13 +15,14 @@ hithink-finance market history --thscode <code> --start-ms <milliseconds> --end-
 
 ## 参数选择策略
 
-| 参数                        | 必填 | 说明                                                          |
-| --------------------------- | ---- | ------------------------------------------------------------- |
-| `--thscode <code>`          | 是   | single A-share thscode                                        |
-| `--start-ms <milliseconds>` | 是   | start timestamp；上游参数: start                              |
-| `--end-ms <milliseconds>`   | 是   | end timestamp；上游参数: end                                  |
-| `--adjust <mode>`           | 否   | adjustment mode；可选: none, forward, backward；默认: forward |
-| `--output <path>`           | 否   | write the full JSON response envelope to a file               |
+| 参数                        | 必填 | 说明                                                                        |
+| --------------------------- | ---- | --------------------------------------------------------------------------- |
+| `--thscode <code>`          | 是   | single A-share thscode                                                      |
+| `--start-ms <milliseconds>` | 是   | start timestamp；上游参数: start                                            |
+| `--end-ms <milliseconds>`   | 是   | end timestamp；上游参数: end                                                |
+| `--adjust <mode>`           | 否   | adjustment mode；可选: none, forward, backward；默认: forward               |
+| `--output <path>`           | 否   | write the response or data rows to a file                                   |
+| `--file-format <format>`    | 否   | output file format (requires --output)；可选: json, ndjson, csv；默认: json |
 
 ## 窗口与分页
 
@@ -31,7 +32,7 @@ hithink-finance market history --thscode <code> --start-ms <milliseconds> --end-
 ## 常见错误
 
 - 参数校验失败时按 `error.hint` 修正，不要猜字段名。
-- 认证失败时不要重试刷屏；先处理 API Key。
+- 认证失败时先用 `auth status` 检查当前方式，再按 shared 的认证流程恢复。
 
 ## 批量操作说明
 

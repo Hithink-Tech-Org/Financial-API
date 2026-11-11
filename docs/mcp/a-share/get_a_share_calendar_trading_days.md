@@ -1,6 +1,6 @@
 # A股交易日历
 
-[业务导航](README.md)
+[业务导航](../meta/README.md)
 
 > **info**
 > 工具名：`get_a_share_calendar_trading_days`

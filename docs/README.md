@@ -12,27 +12,33 @@
 | 为聊天客户端配置托管 MCP | [MCP 接入说明](mcp.md) |
 | 安装并使用 Node.js CLI | [CLI README](../hithink-finance-cli/README.md) |
 | 使用 Python toolkit、SDK 和本地 marketdb | [Python README](../python/README.md) |
-| 安装跨 API/MCP/CLI 的 Agent Skill | [`hithink-finance` Skill](../skills/hithink-finance/SKILL.md) |
+| 查询 REST API 文档或按需求选择 HTTP 接口 | [`hithink-finance` Skill](../skills/hithink-finance/SKILL.md) |
+| CLI 安装前准备、安装与首次接入 | [CLI 简介与首次接入](../skills/hithink-finance/references/cli.md) |
+| 配置 MCP、选择 tool 并读取工具契约 | [`hithink-finance-mcp` Skill](../skills/hithink-finance-mcp/SKILL.md) |
 | 免配置使用金融数据或端内专用能力 | [下载并体验同花顺AI客户端](https://lumi.10jqka.com.cn/?channel=Hithink-API) |
 | 浏览代码样例和金融看板灵感 | [示例入口](../examples/README.md) |
 
 API、MCP、CLI、Python SDK 和 Agent Skill 适合自主接入；同花顺AI客户端已接入当前数据源，内置金融数据与分析能力，适合免配置直接使用。标记为“端内专用”的能力仅在客户端提供。
 
+## 批量能力与客户端兼容
+
+历史行情和 A 股三类报表提供独立的原生批量入口，每次最多 10 个原始代码项，响应按有效标的分组并保留合法空组；基金快照通过原入口的 `thscode` 参数支持最多 100 个代码，响应为平铺行情。具体参数、排序和错误语义见对应 REST/MCP 契约。客户端使用成功响应中的有效结果，整体调用错误返回非零。CLI 能力与命令以 `capabilities` 为准，MCP 以 `tools/list` 为准。
+
 ## 文档边界
 
-- `docs/api/` 按前端单接口页和多接口模块页组织 REST 契约；`docs/mcp/` 按业务域保留原子工具文档。业务域首页集中提供分组和选路条件，统一 Skill 镜像 REST 页面并按业务域合并 MCP 文档。
+- `docs/api/` 按前端单接口页和多接口模块页组织 REST 契约，镜像到 `hithink-finance`；`docs/mcp/` 的工具文档按业务分类合并到 `hithink-finance-mcp`，每个工具小节包含参数、返回字段和关联结构。
 - 文档全文聚合：<https://fuyao.aicubes.cn/llms-full.txt>。本地查询按业务域首页进入目标接口或工具页。
 - `hithink-finance-cli/` 只说明 CLI 的安装、命令和运行语义，不复制上游响应字段契约。
 - `python/` 只说明 Python toolkit、SDK、marketdb 和脚本运行方式，不复制上游响应字段契约。
-- MCP 的实时工具清单和参数 schema 以客户端当前 `tools/list` 为准；本仓库只维护接入方式和能力边界。
+- MCP 的实时工具清单和参数 schema 以客户端当前 `tools/list` 为准；本仓库维护接入配置、单工具契约、响应字段与能力边界。
 
 ## 契约同步
 
-修改 `docs/api/` 或 `docs/mcp.md` 后，从仓库根执行：
+修改 `docs/api/`、`docs/mcp.md` 或 `docs/mcp/` 后，从仓库根执行：
 
 ```bash
 python scripts/sync_skill_contracts.py
 python scripts/sync_skill_contracts.py --check
 ```
 
-第一条命令更新独立发布 Skill 中的文档，第二条命令用于 CI 或提交前检查。不要直接编辑 `skills/hithink-finance/references/api/` 或 `skills/hithink-finance/references/mcp/`。
+第一条命令更新两个独立 Skill 的生成契约，第二条命令用于 CI 或提交前检查。手写 Skill 入口与认证指引按各自职责维护，生成契约始终修改源文档后再同步。

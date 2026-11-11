@@ -1,0 +1,4 @@
+interface:
+  display_name: "同花顺金融数据 MCP"
+  short_description: "配置和诊断金融数据 MCP，选择业务工具并按工具契约查询"
+  default_prompt: "使用 $hithink-finance-mcp 配置同花顺金融数据 MCP，并选择合适工具完成本次数据查询。"

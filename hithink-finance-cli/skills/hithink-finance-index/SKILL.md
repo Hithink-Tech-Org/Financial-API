@@ -1,6 +1,6 @@
 ---
 name: hithink-finance-index
-description: '用于 Agent 通过 hithink-finance CLI 查询同花顺指数/概念/行业/地域/特色指数目录、指数成分股、指数快照和指数历史；个股行情转 hithink-finance-market，股票代码搜索转 hithink-finance-symbol。'
+description: '通过 hithink-finance CLI 查询同花顺指数、概念、行业、地域和特色板块目录、指数成分股、指数实时快照和历史行情。'
 ---
 
 # hithink-finance-index
@@ -9,31 +9,33 @@ description: '用于 Agent 通过 hithink-finance CLI 查询同花顺指数/概�
 
 ## 前置条件表
 
-| 条件                         | 操作                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| 首次使用本域                 | 读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用                         |
-| 首次执行或版本变化           | 查看 `capabilities --format json` 与目标 `schema <id> --format json`；组合规则不明确时查看 `--help` |
-| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                                     |
-| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                                                   |
+| 条件                         | 操作                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| 需要认证、共用输出或维护指引 | 按需读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用 |
+| 选定命令或版本变化           | 用目标 `schema <id> --format json` 核对参数；命令未知时再读取 `capabilities`    |
+| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                 |
+| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                               |
 
 ## 快速决策
 
-| 用户意图                      | 首选命令 / 路由               |
-| ----------------------------- | ----------------------------- |
-| 找概念/行业/地域/特色指数目录 | `index catalog`               |
-| 查某个指数成分股              | `index constituents`          |
-| 查指数实时快照                | `index snapshot`              |
-| 查指数历史日线                | `index history`               |
-| 查个股历史/快照               | 切到 `hithink-finance-market` |
+| 用户意图                      | 首选命令 / 路由                                                  |
+| ----------------------------- | ---------------------------------------------------------------- |
+| 找概念/行业/地域/特色指数目录 | `index catalog`                                                  |
+| 查某个指数成分股              | `index constituents`                                             |
+| 查指数实时快照                | `index snapshot`                                                 |
+| 查指数历史日线                | `index history`                                                  |
+| 多只指数历史日线              | `index history-batch --thscodes <codes>`；每批最多 10 个原始代码 |
+| 查个股历史/快照               | 切到 `hithink-finance-market`                                    |
 
 ## Shortcuts
 
-| 命令                                                   | 何时使用                     |
-| ------------------------------------------------------ | ---------------------------- |
-| [index catalog](references/index-catalog.md)           | List THS indices by category |
-| [index constituents](references/index-constituents.md) | Query index constituents     |
-| [index history](references/index-history.md)           | Query daily index history    |
-| [index snapshot](references/index-snapshot.md)         | Query index price snapshots  |
+| 命令                                                     | 何时使用                                        |
+| -------------------------------------------------------- | ----------------------------------------------- |
+| [index catalog](references/index-catalog.md)             | List THS indices by category                    |
+| [index constituents](references/index-constituents.md)   | Query index constituents                        |
+| [index history](references/index-history.md)             | Query daily index history                       |
+| [index history-batch](references/index-history-batch.md) | Query daily index history for multiple thscodes |
+| [index snapshot](references/index-snapshot.md)           | Query index price snapshots                     |
 
 ## 原生命令与 schema
 

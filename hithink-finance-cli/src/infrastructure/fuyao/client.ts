@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../credentials/authenticated-request.js';
 /**
  * Fuyao API 客户端模块
  *
@@ -39,6 +40,8 @@ export interface FuyaoRequest<T> {
   query?: Record<string, string | number | boolean | undefined>;
   /** 响应数据验证 schema（Zod） */
   schema: ZodType<T>;
+  /** Batch calls use one transport attempt. */
+  batch?: boolean;
 }
 
 /**
@@ -59,6 +62,7 @@ export interface FuyaoSuccess<T> {
  * 支持依赖注入以方便单元测试和自定义行为。
  */
 export interface FuyaoClientOptions {
+  authRefreshBudget?: { used: boolean };
   /** Fuyao API 基础 URL（如 https://api.example.com） */
   baseUrl: string;
   /** 认证会话（包含 API Key） */
@@ -241,6 +245,8 @@ export class FuyaoClient {
    * @throws {CliError} 网络故障、响应格式错误、业务错误等
    */
   async request<T>(request: FuyaoRequest<T>): Promise<FuyaoSuccess<T>> {
+    const refreshBudget = this.options.authRefreshBudget ?? { used: false };
+    const maxAttempts = request.batch === true ? 1 : this.maxAttempts;
     // 构建完整 URL：基础路径 + 查询参数
     const url = new URL(request.path, this.options.baseUrl);
     for (const [key, value] of Object.entries(request.query ?? {})) {
@@ -249,23 +255,29 @@ export class FuyaoClient {
     }
 
     // 重试循环
-    for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       let response: Response;
       try {
         // 发送 GET 请求，带 API Key 认证头和超时控制
-        response = await this.fetchImplementation(url, {
-          method: 'GET',
-          headers: {
-            'X-api-key': this.options.auth.apiKey,
-            'X-THS-Skill-Id': 'Hithink-Finance-CLI',
-            accept: 'application/json',
+        response = await authenticatedFetch(
+          url,
+          {
+            method: 'GET',
+            headers: {
+              'X-THS-Skill-Id': 'Hithink-Finance-CLI',
+              accept: 'application/json',
+            },
+            signal: this.requestSignal(),
           },
-          signal: this.requestSignal(),
-        });
-      } catch {
+          this.options.auth,
+          this.fetchImplementation,
+          refreshBudget,
+        );
+      } catch (error) {
+        if (error instanceof CliError) throw error;
         if (this.options.signal?.aborted === true) throw cancelledError();
         // 网络错误（连接失败、超时等）
-        if (attempt < this.maxAttempts - 1) {
+        if (attempt < maxAttempts - 1) {
           // 还有重试次数：指数退避后重试
           await this.waitBeforeRetry(undefined, attempt);
           continue;
@@ -286,7 +298,7 @@ export class FuyaoClient {
       try {
         body = await response.json();
       } catch {
-        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < this.maxAttempts - 1) {
+        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < maxAttempts - 1) {
           await this.waitBeforeRetry(response, attempt);
           continue;
         }
@@ -304,7 +316,7 @@ export class FuyaoClient {
       // 校验 Fuyao 标准信封格式（code / message / request_id / data）
       const parsedEnvelope = fuyaoEnvelopeSchema.safeParse(body);
       if (!parsedEnvelope.success) {
-        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < this.maxAttempts - 1) {
+        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < maxAttempts - 1) {
           await this.waitBeforeRetry(response, attempt);
           continue;
         }
@@ -323,7 +335,7 @@ export class FuyaoClient {
 
       // HTTP transport status takes precedence over a syntactically valid business envelope.
       if (!response.ok) {
-        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < this.maxAttempts - 1) {
+        if (RETRYABLE_HTTP_STATUS_CODES.has(response.status) && attempt < maxAttempts - 1) {
           await this.waitBeforeRetry(response, attempt);
           continue;
         }
@@ -356,7 +368,7 @@ export class FuyaoClient {
       const error = businessError(envelope.code, envelope.message, envelope.request_id);
 
       // 可重试的业务错误且还有重试次数
-      if (RETRYABLE_BUSINESS_CODES.has(envelope.code) && attempt < this.maxAttempts - 1) {
+      if (RETRYABLE_BUSINESS_CODES.has(envelope.code) && attempt < maxAttempts - 1) {
         // 优先使用有上限的服务器端 Retry-After，否则使用客户端指数退避
         await this.waitBeforeRetry(response, attempt);
         continue;

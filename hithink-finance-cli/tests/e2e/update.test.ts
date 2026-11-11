@@ -73,9 +73,9 @@ test('update repair reinstalls the current package version', async () => {
   expect(JSON.parse(result.stdout)).toMatchObject({
     ok: true,
     command: 'update',
-    data: { version: '0.1.13', repaired: true },
+    data: { version: '0.2.0', repaired: true },
   });
-  expect(await readFile(log, 'utf8')).toContain('@hithink-tech/hithink-finance-cli@0.1.13');
+  expect(await readFile(log, 'utf8')).toContain('@hithink-tech/hithink-finance-cli@0.2.0');
 });
 
 test('update target-version installs the requested package version', async () => {

@@ -161,8 +161,8 @@ def test_fund_functions_map_the_published_contract(
             ),
             "merge_scope",
         ),
-        (lambda: fuyao_client.fund_market_snapshot("025480.OF"), "exchange-traded"),
-        (lambda: fuyao_client.fund_market_snapshot("510300.SH,159915.SZ"), "single-thscode"),
+        (lambda: fuyao_client.fund_market_snapshot("510300.SH,"), "complete"),
+        (lambda: fuyao_client.fund_market_snapshot(",".join(["510300.SH"] * 101)), "raw tokens"),
         (
             lambda: fuyao_client.fund_market_historical(
                 "510300.SH", 1_700_000_000_000, 1_700_000_000_000 - 1

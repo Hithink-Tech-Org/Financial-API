@@ -8,6 +8,7 @@ on:
       - docs/mcp.md
       - docs/mcp/**
       - skills/hithink-finance/**
+      - skills/hithink-finance-mcp/**
       - scripts/sync_skill_contracts.py
       - .github/workflows/hithink-finance-python-ci.yml
   push:
@@ -17,6 +18,7 @@ on:
       - docs/mcp.md
       - docs/mcp/**
       - skills/hithink-finance/**
+      - skills/hithink-finance-mcp/**
       - scripts/sync_skill_contracts.py
       - .github/workflows/hithink-finance-python-ci.yml
 

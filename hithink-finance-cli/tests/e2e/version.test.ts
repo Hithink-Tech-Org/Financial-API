@@ -52,13 +52,14 @@ test('prints cached update notice to stderr after normal JSON command', async ()
     JSON.stringify({
       checkedAt: Date.now(),
       status: 'success',
-      latestVersion: '0.2.0',
+      latestVersion: '0.3.0',
     }) + '\n',
   );
 
   const result = await execa('node', ['dist/cli/main.js', 'version', '--format', 'json'], {
     env: {
       ...platformEnv,
+      HITHINK_FINANCE_NO_UPDATE_CHECK: undefined,
     },
   });
 
@@ -66,12 +67,12 @@ test('prints cached update notice to stderr after normal JSON command', async ()
     ok: true,
     command: 'version',
   });
-  expect(result.stderr).toContain('0.2.0');
+  expect(result.stderr).toContain('0.3.0');
   expect(result.stderr).toContain('hithink-finance update --check');
   expect(result.stderr).toContain('hithink-finance update`');
   expect(JSON.parse(await readFile(cacheFile, 'utf8'))).toMatchObject({
     promptedAt: expect.any(Number),
-    promptedCurrentVersion: '0.1.13',
-    promptedLatestVersion: '0.2.0',
+    promptedCurrentVersion: '0.2.0',
+    promptedLatestVersion: '0.3.0',
   });
 });

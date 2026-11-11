@@ -1,6 +1,6 @@
 ---
 name: hithink-finance-symbol
-description: '通过 hithink-finance CLI 搜索股票、指数、基金、期货和期权等标的，将名称或 ticker 消歧为 thscode，并导出 A 股或指数代码表；行情和成分查询转对应业务 Skill。'
+description: '通过 hithink-finance CLI 搜索股票、指数、基金、期货和期权的名称或代码，消歧为 thscode；导出 A 股或指数代码表。'
 ---
 
 # hithink-finance-symbol
@@ -9,12 +9,12 @@ description: '通过 hithink-finance CLI 搜索股票、指数、基金、期货
 
 ## 前置条件表
 
-| 条件                         | 操作                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| 首次使用本域                 | 读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用                         |
-| 首次执行或版本变化           | 查看 `capabilities --format json` 与目标 `schema <id> --format json`；组合规则不明确时查看 `--help` |
-| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                                     |
-| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                                                   |
+| 条件                         | 操作                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| 需要认证、共用输出或维护指引 | 按需读取 [共享规则](../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用 |
+| 选定命令或版本变化           | 用目标 `schema <id> --format json` 核对参数；命令未知时再读取 `capabilities`    |
+| 需要执行下表某个命令         | 先读取对应 reference 文件，不要只凭命令名猜参数                                 |
+| 全市场、分页、多标的或长区间 | 使用命令声明的 `--output <path>` 落盘，只报告摘要                               |
 
 ## 快速决策
 

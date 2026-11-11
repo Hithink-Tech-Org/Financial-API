@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-- 先读取 [hithink-finance-shared](../../hithink-finance-shared/SKILL.md)。
+- 需要认证、共用输出或维护规则时，读取 [hithink-finance-shared](../../hithink-finance-shared/SKILL.md)。
 - 确认用户要的是中立研究数据、统计或可复现实证输入，不是投资建议。
 - 先用文件系统确认用户指定的数据库文件存在，并固定绝对路径。文件不存在时报告缺失；初始化由 data Skill 按用户授权执行。
 - 文件存在后运行带同一 `--db` 的 `data status`，再运行 `data migrate` 的默认计划。版本不兼容或 `data.versions` 非空时停止研究前置调用，说明需要迁移；计划不带 `--apply`。

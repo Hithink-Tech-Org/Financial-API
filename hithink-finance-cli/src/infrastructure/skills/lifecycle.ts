@@ -489,6 +489,25 @@ async function syncTarget(
           }
         }
       }
+      const files = [
+        ...new Set([...Object.keys(manifest.files), ...Object.keys(previous?.files ?? {})]),
+      ];
+      const ownedLinks: string[] = [];
+      if (previous !== undefined) {
+        for (const name of unique(files.map((file) => file.split('/')[0]!))) {
+          if (
+            (await linkOwnership(path.join(directory, name), path.join(source, name))) === 'owned'
+          )
+            ownedLinks.push(name);
+        }
+      }
+      // Check all other paths before replacing any verified CLI-owned directory link.
+      await assertNoSymbolicLinks(
+        directory,
+        files.filter((file) => !ownedLinks.includes(file.split('/')[0]!)),
+      );
+      for (const name of ownedLinks)
+        await removeOwnedLink(path.join(directory, name), path.join(source, name));
       await assertNoSymbolicLinks(directory, [
         ...Object.keys(manifest.files),
         ...Object.keys(previous?.files ?? {}),
@@ -620,7 +639,8 @@ export async function syncLifecycleSkills(
     path.join(paths.stateDir, 'skills-sync.lock'),
     { command: 'skills.sync', cliVersion: manifest.cliVersion },
     async () => {
-      const state = applySyncOptions(await readState(paths), options);
+      const previous = await readState(paths);
+      const state = applySyncOptions(structuredClone(previous), options);
       const detectedAgents = (
         await Promise.all(
           supportedSkillAgents.map(async (agent) =>
@@ -641,6 +661,8 @@ export async function syncLifecycleSkills(
         targets.push(result.status);
         if (result.status.status === 'ready' && result.record !== undefined)
           state.targets[agent] = result.record;
+        else if (previous.targets[agent] !== undefined)
+          state.targets[agent] = previous.targets[agent];
       }
       await writeState(paths, state);
       return { targets, failures: targets.filter((target) => target.status !== 'ready') };

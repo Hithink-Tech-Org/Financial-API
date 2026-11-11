@@ -24,14 +24,18 @@ def interface_body(record):
     marker = f'<a id="{record["section_anchor"]}"></a>'
     start = text.index(marker)
     siblings = [item for item in REST if item["output"] == record["output"]]
-    following = siblings[siblings.index(record) + 1:]
-    end = text.index(f'<a id="{following[0]["section_anchor"]}"></a>', start) if following else len(text)
+    following = siblings[siblings.index(record) + 1 :]
+    end = (
+        text.index(f'<a id="{following[0]["section_anchor"]}"></a>', start)
+        if following
+        else len(text)
+    )
     return text[start:end]
 
 
 def test_grouped_identity_and_output_integrity():
-    assert not (ROOT / 'docs/api/common').exists()
-    assert not (ROOT / 'skills/hithink-finance/references/api/common').exists()
+    assert not (ROOT / "docs/api/common").exists()
+    assert not (ROOT / "skills/hithink-finance/references/api/common").exists()
     assert len(REST) == len({r["id"] for r in REST})
     domains = {r["domain"] for r in REST}
     actual = {
@@ -79,7 +83,8 @@ def test_local_contract_links_and_fragments_resolve():
         "docs/api",
         "docs/mcp",
         "skills/hithink-finance/references/api",
-        "skills/hithink-finance/references/mcp",
+        "skills/hithink-finance-mcp/references/mcp",
+        "skills/hithink-finance-mcp/references/api",
     ):
         for page in (ROOT / directory).rglob("*.md"):
             text = re.sub(

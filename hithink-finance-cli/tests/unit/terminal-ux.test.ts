@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import { expect, test } from 'vitest';
 import { createCliContext, type CliContext } from '../../src/cli/context.js';
 import { internalError } from '../../src/contracts/errors.js';
-import { errorEnvelope } from '../../src/contracts/envelope.js';
+import { errorEnvelope, successEnvelope } from '../../src/contracts/envelope.js';
 import { renderResult } from '../../src/output/renderer.js';
 
 class MemoryStream extends Writable {
@@ -15,6 +15,34 @@ class MemoryStream extends Writable {
     return this.chunks.join('');
   }
 }
+
+test('auto follows stdout TTY, width and explicit format overrides', async () => {
+  for (const tty of [true, false]) {
+    const stdout = Object.assign(new MemoryStream(), { isTTY: tty, columns: 24 });
+    const context = {
+      ...createCliContext([]),
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stderr: new MemoryStream() as unknown as NodeJS.WriteStream,
+    };
+    await renderResult(
+      successEnvelope('example', [{ name: '中文', long: 'a'.repeat(50) }], { requestId: 'tty' }),
+      context,
+    );
+    if (tty) {
+      expect(stdout.text()).toContain('name:');
+      expect(
+        stdout
+          .text()
+          .split('\n')
+          .every((line) => line.length <= 24),
+      ).toBe(true);
+    } else {
+      expect(JSON.parse(stdout.text()).ok).toBe(true);
+      expect(stdout.text().trim().split('\n')).toHaveLength(1);
+    }
+  }
+  expect(createCliContext(['--format', 'auto'], { format: 'json' }).format).toBe('auto');
+});
 
 test('--no-color disables terminal decoration even on a TTY', () => {
   const descriptor = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY');

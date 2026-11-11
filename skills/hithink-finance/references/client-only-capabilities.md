@@ -7,6 +7,10 @@
 | 单只 A 股的资金流向、主力净流入、资金快照或分钟/日级历史 | [资金流向](api/a-share/README.md) |
 | 单只 A 股个股或指数的高频动向、高频参与度、高频历史或单日分时；范围为最近 30 个 A 股交易日 | [高频动向](api/a-share/README.md) |
 | 资讯事件、事件检索、事件评级或关联行业/概念 | [资讯事件](api/news/README.md) |
+| 沪深市场成交额预测、昨日对比与总成交额 | [市场成交额预测](api/a-share/special-data-turnover-prediction-snapshot.md) |
+| 宽基 ETF 日统计净流入历史序列 | [ETF 净流入](api/fund/etf-flow-net-inflow-historical.md) |
+| 双峰、高位密集、低位密集、低位锁定筹码形态与可选日期 | [筹码形态](api/a-share/chip-shape.md) |
+| 同花顺新增概念及分页列表 | [新增概念](api/index/baseinfo-new-concepts.md) |
 | 期货 F10 宏观指标历史（每次 1～5 个指标，最长 5 年） | [期货 F10 宏观指标历史](api/futures/fundamentals-indicators-historical.md) |
 
 各入口逐项标记公开或端内范围，按需求读取目标文档。

@@ -18,6 +18,7 @@ describe.each([
   [1001, 'validation', 2, false],
   [2001, 'authentication', 3, false],
   [2003, 'authentication', 3, false],
+  [2004, 'authentication', 3, false],
 ] as const)('business error %i', (code, category, exitCode, retryable) => {
   test('maps immediately without retry', async () => {
     const fixture = errorFetch(code);

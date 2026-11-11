@@ -286,7 +286,8 @@ def collect(source: Path, config: dict) -> tuple[list[dict], dict]:
                                 else "documented"
                             )
                         ),
-                        output=f"docs/api/{domain}/{name}.md",
+                        storage_domain=config.get("output_domains", {}).get(page, domain),
+                        output=f"docs/api/{config.get('output_domains', {}).get(page, domain)}/{name}.md",
                     )
                 )
     rest_by_endpoint = {r["endpoint"]: r for r in records}
@@ -329,7 +330,7 @@ def collect(source: Path, config: dict) -> tuple[list[dict], dict]:
                 body=markdown(body),
                 access="public",
                 status=status,
-                output=f"docs/mcp/{domain}/{path.stem}.md",
+                output=f"docs/mcp/{rest.get('storage_domain', domain) if endpoint else domain}/{path.stem}.md",
             )
         )
     ids = [(r["kind"], r["id"]) for r in records]
@@ -348,7 +349,8 @@ def group_rest_pages(outputs: dict[str, str], records: list[dict]) -> dict[str, 
 
     destinations: dict[str, str] = {}
     for (domain, page), items in groups.items():
-        target = f"docs/api/{domain}/{page}.md" if len(items) > 1 else items[0]["output"]
+        storage = items[0].get("storage_domain", domain)
+        target = f"docs/api/{storage}/{page}.md" if len(items) > 1 else items[0]["output"]
         for record in items:
             old = record["output"]
             destinations[old] = target + (f"#{Path(old).stem}" if len(items) > 1 else "")
@@ -581,8 +583,11 @@ def render(source: Path, config: dict) -> tuple[dict[str, str], dict]:
         domain_links = ""
         for domain in domains:
             info = config["domains"][domain]
+            if domain == "a-share" and "hk-share" in domains:
+                domain_links += "- 股票数据\n"
+            prefix = "  " if domain in ("a-share", "hk-share") and "hk-share" in domains else ""
             domain_links += (
-                f"- [{info['title']}]({domain}/README.md)：{info['intent']}\n"
+                f"{prefix}- [{info['title']}]({domain}/README.md)：{info['intent']}\n"
             )
             domain_path = f"{root}/{domain}/README.md"
             outputs[domain_path] = (

@@ -13,8 +13,6 @@
  * @module credentials/keyring
  */
 
-import { AsyncEntry, findCredentialsAsync } from '@napi-rs/keyring';
-
 /**
  * 凭据存储接口
  *
@@ -22,6 +20,7 @@ import { AsyncEntry, findCredentialsAsync } from '@napi-rs/keyring';
  * 每个操作以 `account` 作为标识符，`secret` 作为要保护的秘密值。
  */
 export interface CredentialStore {
+  supportsPersistentStorage?(): boolean;
   /** 根据账户名获取存储的凭据，不存在时返回 undefined */
   get(account: string): Promise<string | undefined>;
   /** 存储或更新指定账户的凭据 */
@@ -41,6 +40,10 @@ export interface CredentialStore {
  * - 按 service（服务名）对凭据进行命名空间隔离
  */
 export class KeyringCredentialStore implements CredentialStore {
+  supportsPersistentStorage(): boolean {
+    // This binding silently falls back to kernel keyutils on Linux; it cannot pin a persistent store.
+    return process.platform === 'win32' || process.platform === 'darwin';
+  }
   /**
    * @param service - 服务名称标识，默认为 'hithink-finance'，用于在凭据存储中隔离不同应用的数据
    */
@@ -53,7 +56,8 @@ export class KeyringCredentialStore implements CredentialStore {
    * @returns 存储的密码，不存在时返回 undefined
    */
   async get(account: string): Promise<string | undefined> {
-    return new AsyncEntry(this.service, account).getPassword();
+    const { AsyncEntry } = await import('@napi-rs/keyring');
+    return new AsyncEntry(this.service, account).getPassword(AbortSignal.timeout(1500));
   }
 
   /**
@@ -63,7 +67,8 @@ export class KeyringCredentialStore implements CredentialStore {
    * @param secret - 要保存的秘密值
    */
   async set(account: string, secret: string): Promise<void> {
-    await new AsyncEntry(this.service, account).setPassword(secret);
+    const { AsyncEntry } = await import('@napi-rs/keyring');
+    await new AsyncEntry(this.service, account).setPassword(secret, AbortSignal.timeout(1500));
   }
 
   /**
@@ -73,7 +78,8 @@ export class KeyringCredentialStore implements CredentialStore {
    * @returns 是否成功删除
    */
   async delete(account: string): Promise<boolean> {
-    return new AsyncEntry(this.service, account).deleteCredential();
+    const { AsyncEntry } = await import('@napi-rs/keyring');
+    return new AsyncEntry(this.service, account).deleteCredential(AbortSignal.timeout(1500));
   }
 
   /**
@@ -85,7 +91,14 @@ export class KeyringCredentialStore implements CredentialStore {
    * @returns 已存储的账户名数组
    */
   async listAccounts(): Promise<string[]> {
-    const credentials = await findCredentialsAsync(this.service);
+    // Legacy import only: unsupported persistent stores have no durable candidates.
+    if (!this.supportsPersistentStorage()) return [];
+    const { findCredentialsAsync } = await import('@napi-rs/keyring');
+    const credentials = await findCredentialsAsync(
+      this.service,
+      undefined,
+      AbortSignal.timeout(1500),
+    );
     // 从凭据对象数组提取 account 字段
     return credentials.map((credential) => credential.account);
   }

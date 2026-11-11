@@ -2,9 +2,9 @@
 
 ## 前置条件
 
-- 按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。
+- 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema special.limit-break-pool --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- 远端调用需要 API Key，先按共享规则复用已有凭据。
+- 远端调用先用 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。
 
 ## 命令
 
@@ -22,7 +22,8 @@ hithink-finance special limit-break-pool --format json
 | `--size <number>`          | 否   | page size (1-200)；默认: 50                                                                                                                        |
 | `--sort-field <field>`     | 否   | sort field；可选: price_change_ratio_pct, open_times, last_price, turnover_ratio_pct, turnover；默认: price_change_ratio_pct；上游参数: sort_field |
 | `--sort-dir <direction>`   | 否   | sort direction；可选: asc, desc；默认: desc；上游参数: sort_dir                                                                                    |
-| `--output <path>`          | 否   | write the full JSON response envelope to a file                                                                                                    |
+| `--output <path>`          | 否   | write the response or data rows to a file                                                                                                          |
+| `--file-format <format>`   | 否   | output file format (requires --output)；可选: json, ndjson, csv；默认: json                                                                        |
 
 ## 窗口与分页
 
@@ -32,7 +33,7 @@ hithink-finance special limit-break-pool --format json
 ## 常见错误
 
 - 参数校验失败时按 `error.hint` 修正，不要猜字段名。
-- 认证失败时不要重试刷屏；先处理 API Key。
+- 认证失败时先用 `auth status` 检查当前方式，再按 shared 的认证流程恢复。
 
 ## 批量操作说明
 

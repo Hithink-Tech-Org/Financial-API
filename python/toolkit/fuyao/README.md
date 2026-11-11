@@ -26,7 +26,8 @@ python/toolkit/fuyao/
 - 指数/板块目录、成分股和行情
 - 基金档案、公司、经理、持仓、财务、净值、收益、公开资讯和场内基金行情
 - 公开期货期权品种、合约、持仓、仓单、基差、日程和行情
-- 涨停、跌停、炸板、连板、当日异动、热榜和龙虎榜
+- 涨停、跌停、炸板、连板统计、当日异动、热榜、龙虎榜及营业部战绩与历史、严重异动和竞价机会
+- A 股新股发行与申购日历、港股递表、认购与发行详情
 - 全市场 Market Dumps 的远端签出流程
 
 分钟 K、tick、海外行情、宏观数据、新闻公告原文和研报不在当前公开能力内。
@@ -99,6 +100,11 @@ python python/toolkit/fuyao/scripts/fuyao.py limit-up-pool --size 50
 python python/toolkit/fuyao/scripts/fuyao.py limit-break-pool --size 50
 python python/toolkit/fuyao/scripts/fuyao.py hot-stock-list --period day
 python python/toolkit/fuyao/scripts/fuyao.py dragon-tiger-list --board-type all
+python python/toolkit/fuyao/scripts/fuyao.py hot-stock-list --limit 100
+python python/toolkit/fuyao/scripts/fuyao.py limit-up-statistics --date 2026-10-12
+python python/toolkit/fuyao/scripts/fuyao.py auction-stock-opportunities --date 2026-10-12 --size 20
+python python/toolkit/fuyao/scripts/fuyao.py a-share-ipo-calendar --market bj --status subscribable
+python python/toolkit/fuyao/scripts/fuyao.py hk-ipo-issue-detail --issue-code HK2636
 ```
 
 ### 命令分组
@@ -115,12 +121,17 @@ python python/toolkit/fuyao/scripts/fuyao.py dragon-tiger-list --board-type all
 | 基金 | `fund-*`：资料、公司、经理、持仓、财务、净值、收益、资讯、发行状态和场内行情 |
 | 期货期权 | `futures-*`、`options-*`：公开资料、持仓、基差、日程和行情 |
 | 特色数据 | `limit-up-pool`, `limit-down-pool`, `limit-break-pool`, `limit-up-ladder`, `anomaly-analysis-*`, 热榜和龙虎榜命令 |
+| 统计与业务记录 | `limit-up-statistics`, `dragon-tiger-stock-institution`, `dragon-tiger-department-*`, `abnormal-monitor-list`, `auction-stock-opportunities`, `auction-opportunity-dates` |
+| 新股 | `a-share-ipo-calendar`, `hk-ipo-applications`, `hk-ipo-calendar`, `hk-ipo-issue-detail` |
+| 资讯 | `news-article-detail`, `news-flash-list`, `news-flash-refresh`, `news-notice-detail`, `news-topic-hot-list`, `news-anomaly-analysis`, `news-stock-timeline-list` |
 
 具体参数始终以当前 `--help` 和函数签名为准；上游字段解释见 [REST API 契约](../../../docs/api/README.md)。
 
 响应分页和时间语义也以 REST 契约为准：基金资讯按 `has_more` 结束游标分页；集合竞价 `timestamp` 是响应组装时间，短期基准省略日期时使用上海时区当日。
 
 ## Python 函数
+
+资讯函数包括 `news_article_detail`、`news_flash_list`、`news_flash_refresh`、`news_notice_detail`、`news_topic_hot_list`、`news_anomaly_analysis` 与 `news_stock_timeline_list`。按[资讯契约](../../../docs/api/news/README.md)提供栏目或内容标识；个股分时新闻传入单个完整 `thscode`（如 `300033.SZ`）。快讯 `seq` 使用字符串，专题和分时游标原样回传。每次调用只请求一页，分时 `size` 可省略，HTML、空值与分页原样保留。
 
 基金远端函数还包括 `fund_backtest_result`、`fund_backtest_indicators`、`fund_indicators_line`、`fund_indicators_table`、`fund_quota_summary` 和 `fund_quota_list`。复杂对象与数组使用 JSON 字符串，并在 HTTP 前校验结构；完整字段契约见 [`docs/api/routing/fund/README.md`](../../../docs/api/fund/README.md)。
 
@@ -148,6 +159,18 @@ valuations = a_share_valuations_snapshot([hit["thscode"]])
 调用前从名称消歧为唯一 `thscode`，不要猜交易所后缀。Python 函数会处理其明确支持的输入校验、重试、分页或时间窗口辅助；不要从旧文档推断当前签名。
 
 ## 输出与错误
+
+批量入口为 `prices_historical_batch`、`index_prices_historical_batch`、`fund_market_historical_batch` 与三种 `financials_*_batch` 函数；对应脚本命令是 `prices-historical-batch`、`index-historical-batch`、`fund-historical-batch`、`financials-income-batch`、`financials-balance-batch`、`financials-cashflow-batch`。新函数接收 `thscodes` 字符串或可迭代代码集合；新命令使用 `--thscodes`，时间、复权和财报条件由整批共享。六个入口每批最多 10 个原始代码，先检查上限再规范化、稳定去重。
+
+新函数返回的 `item` 按代码保存分组，每组保留 `timestamp` 和原记录数组。有效标的没有数据时保留空组；无效标的由服务省略，调用成功时脚本退出 0。财报最近期数按每代码计算，默认 4 期、最多 20 期。批量入口只尝试一次 HTTP 请求，超上限时直接拒绝；A 股批量历史支持 `1d/1w/1mo`，指数与 ETF 批量固定 `1d`。指数单代码和批量历史均限上海日期滚动的近五年。
+
+场内基金快照使用 `fund_market_snapshot(thscode="510300.SH,161725.SZ")` 或 `fund-snapshot --thscode <CSV>`，最多 100 个原始代码，返回平铺报价行，复用原客户端恢复策略。
+
+```bash
+python python/toolkit/fuyao/scripts/fuyao.py prices-historical-batch \
+  --thscodes 600519.SH,000001.SZ --start-ms 1767196800000 --end-ms 1769788800000 \
+  --interval 1d --adjust forward > /tmp/history-batch.json
+```
 
 - CLI 业务数据只写 JSON stdout；诊断写 stderr。
 - CLI 退出码：`0` 成功，`2` 上游业务错误，`3` 本地参数错误，`4` 环境或运行错误。

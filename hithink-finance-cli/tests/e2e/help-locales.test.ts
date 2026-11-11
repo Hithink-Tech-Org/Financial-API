@@ -12,7 +12,7 @@ test('renders human help in Chinese for a Chinese system locale', async () => {
   });
 
   expect(result.stdout).toContain('面向人类与 AI Agent 的企业级金融数据命令行工具');
-  expect(result.stdout).toContain('管理 API Key 认证');
+  expect(result.stdout).toContain('管理全局认证');
   expect(result.stdout).toContain('管理本地 DuckDB 数据');
   expect(result.stdout).not.toContain('--api-key <value>');
 });
@@ -40,8 +40,8 @@ describe.each([
 
 test('renders localized auth and remote command help in Chinese', async () => {
   const auth = await execa('node', ['dist/cli/main.js', '--lang', 'zh-CN', 'auth', '--help']);
-  expect(auth.stdout).toContain('管理 API Key 认证');
-  expect(auth.stdout).toContain('保存 API Key 到系统凭据库');
+  expect(auth.stdout).toContain('管理全局认证');
+  expect(auth.stdout).toContain('登录并启用凭据');
 
   const market = await execa('node', [
     'dist/cli/main.js',

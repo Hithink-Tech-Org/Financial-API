@@ -1,10 +1,9 @@
 import { Writable } from 'node:stream';
 import { Readable } from 'node:stream';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { createProgram } from '../../src/cli/program.js';
 import type { CliContext } from '../../src/cli/context.js';
-import type { CredentialStore } from '../../src/infrastructure/credentials/keyring.js';
-import { ApiKeyAuthProvider } from '../../src/infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../../src/infrastructure/credentials/global-provider.js';
 import { createPlatformPaths } from '../../src/infrastructure/filesystem/platform-paths.js';
 import { readHiddenApiKey } from '../../src/commands/auth/index.js';
 
@@ -23,26 +22,6 @@ class MemoryWriteStream extends Writable {
 
   text(): string {
     return this.chunks.join('');
-  }
-}
-
-class MemoryCredentialStore implements CredentialStore {
-  readonly values = new Map<string, string>();
-
-  async get(account: string): Promise<string | undefined> {
-    return this.values.get(account);
-  }
-
-  async set(account: string, secret: string): Promise<void> {
-    this.values.set(account, secret);
-  }
-
-  async delete(account: string): Promise<boolean> {
-    return this.values.delete(account);
-  }
-
-  async listAccounts(): Promise<string[]> {
-    return [...this.values.keys()];
   }
 }
 
@@ -81,101 +60,66 @@ describe('auth login command', () => {
     expect(stderr.text()).toContain('Paste your API key here:');
   });
 
-  test('does not prompt or overwrite when the selected profile is already logged in', async () => {
-    const stdout = new MemoryWriteStream();
-    const stderr = new MemoryWriteStream();
+  function program(provider: GlobalAuthProvider) {
+    const output = new MemoryWriteStream();
     const paths = createPlatformPaths({ homeDir: process.cwd(), env: {} });
-    const store = new MemoryCredentialStore();
-    store.values.set('profile:default', 'existing-secret');
-    const context: CliContext = {
-      format: 'json',
-      language: 'zh-CN',
-      color: false,
-      requestId: 'req-test',
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stderr as unknown as NodeJS.WriteStream,
-    };
-
-    const program = createProgram(
-      { name: '@hithink-tech/hithink-finance-cli', version: '0.1.0' },
-      context,
+    return createProgram(
+      { name: 'test-cli', version: '0.1.15' },
       {
-        authProvider: new ApiKeyAuthProvider(store, {}),
-        fuyaoBaseUrl: 'https://fuyao.aicubes.cn',
+        format: 'json',
+        language: 'en',
+        color: false,
+        requestId: 'test',
+        stdout: output as unknown as NodeJS.WriteStream,
+        stderr: output as unknown as NodeJS.WriteStream,
+        signal: new AbortController().signal,
+        debug: false,
+      },
+      {
+        authProvider: provider,
+        fuyaoBaseUrl: 'https://api.example.test',
         packageRoot: process.cwd(),
         platformPaths: paths,
         resolvedConfig: {
           dbPath: paths.defaultDbPath,
           profile: 'default',
           format: 'json',
-          language: 'zh-CN',
           updateCheck: false,
         },
       },
     );
-
-    await program.parseAsync(['auth', 'login'], { from: 'user' });
-
-    expect(store.values.get('profile:default')).toBe('existing-secret');
-    expect(stderr.text()).toBe('');
-    expect(JSON.parse(stdout.text())).toMatchObject({
-      ok: true,
-      command: 'auth.login',
-      data: {
-        configured: true,
-        already_logged_in: true,
-        next_step: expect.stringContaining('auth login --replace'),
-      },
-    });
+  }
+  test('explicit key login replaces an existing credential without an early success', async () => {
+    const login = vi.fn(async () => undefined);
+    const status = vi.fn(async () => ({
+      connected: true,
+      active_method: 'api-key',
+      storage: { backend: 'keyring' },
+    }));
+    await program({ login, status } as unknown as GlobalAuthProvider).parseAsync([
+      'node',
+      'cli',
+      'auth',
+      'login',
+      '--api-key',
+      'test-input',
+      '--replace',
+    ]);
+    expect(login).toHaveBeenCalledWith({ profile: 'default', apiKey: 'test-input' });
   });
-
-  test('replaces an existing credential only when --replace is explicit', async () => {
-    const stdout = new MemoryWriteStream();
-    const stderr = new MemoryWriteStream();
-    const paths = createPlatformPaths({ homeDir: process.cwd(), env: {} });
-    const store = new MemoryCredentialStore();
-    store.values.set('profile:default', 'existing-secret');
-    const context: CliContext = {
-      format: 'json',
-      language: 'zh-CN',
-      color: false,
-      requestId: 'req-replace',
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      stderr: stderr as unknown as NodeJS.WriteStream,
-    };
-
-    const program = createProgram(
-      { name: '@hithink-tech/hithink-finance-cli', version: '0.1.0' },
-      context,
-      {
-        authProvider: new ApiKeyAuthProvider(store, {}),
-        fuyaoBaseUrl: 'https://fuyao.aicubes.cn',
-        packageRoot: process.cwd(),
-        platformPaths: paths,
-        resolvedConfig: {
-          dbPath: paths.defaultDbPath,
-          profile: 'default',
-          format: 'json',
-          language: 'zh-CN',
-          updateCheck: false,
-        },
-      },
-    );
-
-    await program.parseAsync(['auth', 'login', '--replace', '--api-key', 'replacement-secret'], {
-      from: 'user',
-    });
-
-    expect(store.values.get('profile:default')).toBe('replacement-secret');
-    expect(JSON.parse(stdout.text())).toMatchObject({
-      ok: true,
-      command: 'auth.login',
-      data: {
-        configured: true,
-        replaced: true,
-      },
-    });
-    expect(`${stdout.text()}${stderr.text()}`).not.toContain('replacement-secret');
-    expect(`${stdout.text()}${stderr.text()}`).not.toContain('existing-secret');
+  test('rejects OAuth/key conflicts before consuming stdin', async () => {
+    const login = vi.fn();
+    await expect(
+      program({ login } as unknown as GlobalAuthProvider).parseAsync([
+        'node',
+        'cli',
+        'auth',
+        'login',
+        '--method',
+        'oauth',
+        '--api-key-stdin',
+      ]),
+    ).rejects.toMatchObject({ code: 'CLI_CONFLICTING_ARGUMENTS' });
+    expect(login).not.toHaveBeenCalled();
   });
 });

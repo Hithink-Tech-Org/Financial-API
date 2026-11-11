@@ -19,7 +19,7 @@ import { CliError } from '../contracts/errors.js';
 import type { CommandDescriptor } from '../contracts/registry.js';
 import { renderResult } from '../output/renderer.js';
 import { registerAuthCommands } from '../commands/auth/index.js';
-import type { ApiKeyAuthProvider } from '../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../infrastructure/credentials/global-provider.js';
 import { registerSymbolCommands } from '../commands/symbol/index.js';
 import { registerMarketCommands } from '../commands/market/index.js';
 import { registerSpecialCommands } from '../commands/special/index.js';
@@ -29,6 +29,8 @@ import { registerFundCommands } from '../commands/fund/index.js';
 import { registerValuationCommands } from '../commands/valuation/index.js';
 import { registerFuturesCommands } from '../commands/futures/index.js';
 import { registerOptionsCommands } from '../commands/options/index.js';
+import { registerIpoCommands } from '../commands/ipo/index.js';
+import { registerNewsCommands } from '../commands/news/index.js';
 import { registerCapabilitiesCommand } from '../commands/system/capabilities.js';
 import { registerSchemaCommand } from '../commands/system/schema.js';
 import { registerSkillsCommands } from '../commands/skills/index.js';
@@ -41,6 +43,8 @@ import { registerLocalMarketCommands } from '../commands/market/local.js';
 import type { PlatformPaths } from '../infrastructure/filesystem/platform-paths.js';
 import type { ResolvedConfig } from '../application/config.js';
 import { registerConfigCommands } from '../commands/config/index.js';
+import { tableOutputOptions } from '../contracts/output-options.js';
+import { registerWorkerCommands } from '../commands/worker/index.js';
 
 /**
  * Minimal metadata extracted from `package.json` at startup.
@@ -67,7 +71,7 @@ export interface PackageMetadata {
 export interface ProgramDependencies {
   /** API key authentication provider (keyring + env).
    *  API 密钥认证提供者（keyring + 环境变量）。 */
-  authProvider: ApiKeyAuthProvider;
+  authProvider: GlobalAuthProvider;
   /** Base URL for the Fuyao upstream API.
    *  拂晓上游 API 的基础 URL。 */
   fuyaoBaseUrl: string;
@@ -135,10 +139,10 @@ export function createProgram(
         localizeText(context.language, 'human interface language'),
       ).choices(['zh-CN', 'en']),
     )
-    .option(
-      '--profile <name>',
-      localizeText(context.language, 'configuration and credential profile'),
-      dependencies.resolvedConfig.profile,
+    .addOption(
+      new Option('--profile <name>', 'legacy migration diagnostic')
+        .default(dependencies.resolvedConfig.profile)
+        .hideHelp(),
     )
     .option('--config <path>', localizeText(context.language, 'explicit JSON configuration file'))
     .addOption(
@@ -168,7 +172,26 @@ export function createProgram(
     });
 
   // ---- preAction 钩子：在执行任何命令前校验冲突参数 ----
+  for (const option of tableOutputOptions) {
+    const definition = new Option(option.flags, localizeText(context.language, option.description));
+    if (option.defaultValue !== undefined) definition.default(option.defaultValue);
+    program.addOption(definition);
+  }
   program.hook('preAction', (_root, action) => {
+    if (
+      !Number.isSafeInteger(context.maxRows ?? 20) ||
+      (context.maxRows ?? 20) < 0 ||
+      context.tableColumns?.some((field) => !field) ||
+      (context.tableColumns?.includes('*') && context.tableColumns.length !== 1)
+    )
+      throw new CliError({
+        code: 'CLI_BAD_ARGUMENT',
+        category: 'validation',
+        message: 'Invalid table preview options.',
+        hint: 'Use --max-rows with a nonnegative integer and --columns field1,field2 or --columns "*".',
+        retryable: false,
+        exitCode: 2,
+      });
     const options = action.optsWithGlobals<{ apiKey?: string; apiKeyStdin?: boolean }>();
     // 同时传入 --api-key 和 --api-key-stdin 是互斥的
     if (options.apiKey !== undefined && options.apiKeyStdin === true)
@@ -214,6 +237,7 @@ export function createProgram(
   versionDescriptor.register(program);
   registerAuthCommands(program, context, metadata, dependencies.authProvider);
   registerConfigCommands(program, context, dependencies.resolvedConfig);
+  registerWorkerCommands(program, context, dependencies.packageRoot);
 
   // 远程命令依赖：认证、基础 URL 和数据库路径
   const remoteDependencies = {
@@ -231,6 +255,8 @@ export function createProgram(
   registerValuationCommands(program, context, remoteDependencies);
   registerFuturesCommands(program, context, remoteDependencies);
   registerOptionsCommands(program, context, remoteDependencies);
+  registerIpoCommands(program, context, remoteDependencies);
+  registerNewsCommands(program, context, remoteDependencies);
   registerCapabilitiesCommand(program, context);
   registerSchemaCommand(program, context);
   registerSkillsCommands(program, context, dependencies.packageRoot);

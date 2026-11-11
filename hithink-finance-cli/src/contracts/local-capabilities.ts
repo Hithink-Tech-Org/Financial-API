@@ -48,6 +48,8 @@ export interface LocalCapabilityOption {
  * 该数组在模块加载时冻结 — 运行时不会变化。
  */
 export const localCapabilities: readonly LocalCapabilityDescriptor[] = [
+  descriptor('worker.status', 'worker', 'status'),
+  descriptor('worker.stop', 'worker', 'stop'),
   // ---- data 数据管理命令 ----
   descriptor('data.init', 'data', 'init', [
     { flags: '--kline <path>', description: 'local daily Parquet; provide together with --events' },

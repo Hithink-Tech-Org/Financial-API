@@ -12,7 +12,7 @@
  *
  * 例如：thscode → thscode，periodEnd → period_end，dateMs → date_ms
  */
-function snakeCase(key: string): string {
+export function snakeCase(key: string): string {
   return key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
@@ -47,6 +47,6 @@ export function externalize(value: unknown): unknown {
  * @param value - 任意 JS 值
  * @returns JSON 字符串 + '\n'
  */
-export function renderJson(value: unknown): string {
-  return `${JSON.stringify(externalize(value))}\n`;
+export function renderJson(value: unknown, pretty = false): string {
+  return `${JSON.stringify(externalize(value), null, pretty ? 2 : undefined)}\n`;
 }

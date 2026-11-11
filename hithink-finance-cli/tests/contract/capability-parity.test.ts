@@ -4,6 +4,8 @@ import { remoteCapabilities } from '../../src/contracts/remote-capabilities.js';
 import { localCapabilities } from '../../src/contracts/local-capabilities.js';
 
 const localCommands = [
+  ['worker', 'status'],
+  ['worker', 'stop'],
   ['data', 'init'],
   ['data', 'sync'],
   ['data', 'status'],
@@ -23,7 +25,7 @@ const localCommands = [
 ];
 
 test('exposes all remote and local capability paths', async () => {
-  expect(remoteCapabilities).toHaveLength(88);
+  expect(remoteCapabilities).toHaveLength(112);
   expect(localCapabilities.map((item) => item.command.join(' ')).sort()).toEqual(
     localCommands.map((item) => item.join(' ')).sort(),
   );

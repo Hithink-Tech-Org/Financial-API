@@ -7,7 +7,7 @@
 
 **同花顺金融数据服务（hithink-finance）** 是由同花顺官方提供和维护的 A 股金融数据服务，面向 AI Agent、量化研究者和应用开发者。
 
-通过统一 API Key，可以查询 A 股行情、集合竞价、财务报表、估值、指数与板块、公募基金、公开期货期权和特色数据，并通过 REST API、MCP、CLI、Python SDK、本地 DuckDB 或 Agent Skill 接入现有工作流。
+通过统一 API Key，可以查询 A 股行情、集合竞价、财务报表、估值、指数与板块、公募基金、公开期货期权、特色数据及 A 股和港股新股资料，并通过 REST API、MCP、CLI、Python SDK、本地 DuckDB 或 Agent Skill 接入现有工作流。
 
 > 一站式同花顺官方金融数据能力，覆盖查询、研究、批量导出和 AI Agent 自动调用。
 
@@ -23,7 +23,7 @@
 
 | 使用场景 | 推荐方式 | 说明 |
 | --- | --- | --- |
-| 让 AI Agent 自动查询和分析金融数据 | [`hithink-finance` Skill](skills/hithink-finance/SKILL.md) | 根据任务和当前环境选择 CLI、MCP 或 REST API |
+| 让 AI Agent 自动查询和分析金融数据 | [CLI 内置 Skills](hithink-finance-cli/README.md#agent-skill-lifecycle) | 根据各内置 Skill 的 description 直接选择业务域 |
 | 在终端、Agent 或自动化任务中统一取数和导出 | [CLI](hithink-finance-cli/README.md) | 整合远端取数、本地 DuckDB、认证和结构化输出 |
 | 在 Chat Bot 或 IDE 中直接调用 | [MCP](docs/mcp.md) | 配置托管服务和 API Key 后在对话中使用 |
 | 接入网站、App、后台服务或其他语言 | [REST API](docs/api/README.md) | 标准 HTTP 接口，适合自定义集成 |
@@ -32,7 +32,7 @@
 | 获取全市场或长时间范围数据 | [CLI](hithink-finance-cli/README.md) / [Market Dumps](docs/api/market-dumps.md) | 使用批量能力并让大结果直接落盘 |
 | 免配置使用金融数据或端内专用能力 | [同花顺AI客户端](https://lumi.10jqka.com.cn/?channel=Hithink-API) | 数据源已经接入，打开客户端即可使用 |
 
-不确定如何选择时，优先安装 `hithink-finance` Skill；如果希望直接在终端调用，优先使用 CLI。
+Agent 和终端任务优先使用 CLI 及其内置 Skills；REST 文档与 HTTP 接口选路使用 `hithink-finance`，MCP 配置及工具调用使用 `hithink-finance-mcp`。
 
 ## 数据能力与边界
 
@@ -51,6 +51,7 @@
 | 公募基金 | 查询资料、公司、经理、财务、持仓、净值、业绩、资讯和场内行情 | CLI / API / MCP / Python |
 | 公开期货 | 查询品种、合约、持仓、仓单、基差、交易日程、分时和日 K | CLI / API / MCP / Python |
 | 公开期权 | 查询品种、合约、分时和日 K | CLI / API / MCP / Python |
+| 资讯 | 查询资讯详情、快讯、公告解读、专题、日期范围异动解读与个股分时新闻 | CLI / API / MCP / Python |
 | 全市场数据文件 | 下载全量或增量日 K、公司行动等标准数据文件 | CLI / Market Dumps |
 | 本地 DuckDB | 初始化、同步、校验、修复、SQL 查询和导出 | CLI / marketdb |
 | 端内专用数据与分析 | 在客户端使用资金流向、高频动向和期货期权专业数据 | [同花顺AI客户端](https://lumi.10jqka.com.cn/?channel=Hithink-API) |
@@ -59,25 +60,33 @@
 
 ## 快速开始
 
-### 1. 获取统一 API Key
+### 1. 选择认证方式
 
-登录 [同花顺金融数据服务官网](https://fuyao.aicubes.cn/)，进入 [API Key 管理](https://fuyao.aicubes.cn/admin/) 创建 Key。
+CLI 默认推荐 OAuth：先运行 `hithink-finance auth status --format json` 复用当前有效凭据；首次登录使用 `hithink-finance auth login --method oauth`，按提示完成浏览器授权。
 
-API、MCP、CLI 和 Python 远端取数共用同一个 API Key。安装 `hithink-finance` Skill 后，具备本地浏览器操作能力的 Agent 可以在用户扫码一次后完成 Key 签发、安全交接、用户级环境变量、`credentials.env`、CLI 凭据库和真实请求验证；其他场景可按同一 runbook 逐步操作。具体流程见 [首次登录、创建与持久配置](skills/hithink-finance/references/api-key-onboarding.md)。
+REST、MCP、Python 及 CLI 的 API Key 方式共用在 [API Key 管理](https://fuyao.aicubes.cn/admin/) 获取的 Key。选择此方式后，Agent 可完成 Key 签发、安全交接、用户级持久配置和真实请求验证。具体流程见 [API Key 创建与持久配置](skills/hithink-finance/references/api-key-onboarding.md)。
 
 用户可以直接把 API Key 提供给 Agent 上下文以便代配；Agent 不应复述，并应提示聊天平台可能保留消息记录。Key 不要写入代码、README、Issue、日志、产物或 Git；本地持久化优先使用用户级环境变量、用户级凭据文件、系统凭据库或客户端 Secret。
 
 ### 2. Agent Skill
 
-`hithink-finance` Skill 是 AI Agent 使用本项目的统一入口，提供接入方式选择、标的消歧、按前端页面组织的 REST 契约、按业务域合并的 MCP 工具文档、安全规则和大结果落盘约定。
+按实际接入方式使用独立 Skill：
 
-推荐通过公开仓库安装：
+| Skill | 职责 |
+| --- | --- |
+| [`hithink-finance`](skills/hithink-finance/SKILL.md) | REST API Wiki 与 API Router：接口文档、HTTP 接口选择、参数和返回字段契约，附带 CLI 简介、安装准备与首次接入 |
+| [`hithink-finance-mcp`](skills/hithink-finance-mcp/SKILL.md) | MCP 配置与连接、业务域和 tool 选路、单工具参数与返回要求 |
+
+各自安装或分发时保留完整目录及 `references/`。MCP 契约按业务分类组织，每个工具保留包含参数、返回字段和关联结构的独立小节，可以独立使用。
+
+CLI 配套领域 Skills 随 npm 包安装，并由 CLI 发布到用户级共享目录，再链接到已安装 Agent：
 
 ```bash
-npx skills add HiThink-Tech/Financial-API --skill hithink-finance -g --yes
+npm install -g @hithink-tech/hithink-finance-cli
+hithink-finance skills status --format json
 ```
 
-无网络条件下，可以从 [Skill Hub](https://www.skillhub.cn/skills/hithink-finance) 安装；也可以复制完整的 [`skills/hithink-finance/`](skills/hithink-finance/SKILL.md) 目录。复制时必须保留 `references/`。
+CLI 的业务请求由宿主按内置 Skill 的 description 直接选择领域。CLI 配套 Skills 的同步规则见 [CLI 文档](hithink-finance-cli/README.md#agent-skill-lifecycle)。
 
 重新打开 Agent 会话后即可直接描述需求：
 
@@ -146,7 +155,7 @@ curl 'https://fuyao.aicubes.cn/api/a-share/prices/snapshot?thscodes=600519.SH' \
 
 ### 5. MCP
 
-MCP 适合 Claude Desktop、Cursor、Windsurf 和其他支持 MCP 的客户端。当前提供六个托管服务：
+MCP 适合 Claude Desktop、Cursor、Windsurf 和其他支持 MCP 的客户端。按七个数据域提供接入配置，连接后以实时 `tools/list` 确认可用工具：
 
 | 服务名称 | 地址 | 主要能力 |
 | --- | --- | --- |
@@ -156,6 +165,7 @@ MCP 适合 Claude Desktop、Cursor、Windsurf 和其他支持 MCP 的客户端�
 | `hithink-finance-fund` | `https://fuyao.aicubes.cn/mcp/fund` | 公募基金资料、披露、净值、收益和场内行情 |
 | `hithink-finance-futures` | `https://fuyao.aicubes.cn/mcp/futures` | 公开期货资料、持仓、基差、日程和行情 |
 | `hithink-finance-options` | `https://fuyao.aicubes.cn/mcp/options` | 公开期权品种、合约和行情 |
+| `hithink-finance-hk-share` | `https://fuyao.aicubes.cn/mcp/hk-share` | 港股新股递表、认购、上市日历与发行详情 |
 
 单个服务的配置结构如下：
 
@@ -232,6 +242,8 @@ marketdb validate --json --db data/market.duckdb
 
 ## 最新变化
 
+- CLI 与 Python toolkit 新增涨停统计、个股机构与营业部记录、严重异动、竞价机会及 A 股和港股新股入口；热榜支持按条数查询。对应 REST/MCP 与 Agent Skill 契约同步更新。
+
 项目对外可见的重要变化按时间倒序记录在 [`CHANGELOG.md`](CHANGELOG.md)，避免在多个入口重复维护易过期的版本摘要。
 
 旧版根级 Python 用户、脚本和 Agent Prompt 请先阅读 [Monorepo 版本升级指南](docs/monorepo-migration.md)；本地数据库和数据文件不需要随代码目录迁移。
@@ -247,7 +259,7 @@ examples/                monorepo 级示例导航和静态灵感
 scripts/                 仓库级维护脚本
 ```
 
-详细参数和契约下沉到对应子项目 README 或 `docs/`。`docs/api/` 与 Skill 的 REST 文档均按单接口页和多接口模块页组织，接口可通过独立锚点定位；`references/mcp/` 按业务域生成。`references/mcp.md` 维护接入与业务域入口。契约更新后从仓库根目录运行：
+详细参数和契约下沉到对应子项目 README 或 `docs/`。REST 页面同步到 `hithink-finance`；MCP 工具按业务分类合并到 `hithink-finance-mcp`，每个工具小节包含参数、返回字段和关联结构。契约更新后从仓库根目录运行：
 
 ```bash
 python scripts/sync_skill_contracts.py
@@ -272,10 +284,6 @@ npm run verify
 - [Agent Skill](skills/hithink-finance/SKILL.md)
 - [Monorepo 升级指南](docs/monorepo-migration.md)
 - [更新日志](CHANGELOG.md)
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=HiThink-Tech/Financial-API&type=Date)](https://www.star-history.com/#HiThink-Tech/Financial-API&Date)
 
 ## License
 

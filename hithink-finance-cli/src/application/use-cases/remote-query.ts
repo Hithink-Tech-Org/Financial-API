@@ -134,7 +134,12 @@ export async function executeRemoteQuery(
   const start = input.startMs;
   const end = input.endMs;
   // 时间窗口分片：仅对 ten-years 端点的超长时间范围做分片
-  if (capability.window === 'ten-years' && typeof start === 'number' && typeof end === 'number') {
+  if (
+    !capability.id.endsWith('-batch') &&
+    capability.window === 'ten-years' &&
+    typeof start === 'number' &&
+    typeof end === 'number'
+  ) {
     const slices = sliceTimeWindow(start, end);
     if (slices.length > 1) {
       // 分片循环：对每个时间切片发起独立请求
@@ -164,5 +169,6 @@ export async function executeRemoteQuery(
     path: capability.endpoint,
     query,
     schema: capability.outputSchema,
+    batch: capability.id.endsWith('-batch'),
   });
 }

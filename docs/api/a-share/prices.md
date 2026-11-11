@@ -4,6 +4,7 @@
 
 - [行情快照](#prices-snapshot)：`GET /api/a-share/prices/snapshot`
 - [历史 K 线](#prices-historical)：`GET /api/a-share/prices/historical`
+- [批量历史 K 线](#prices-historical-batch)：`GET /api/a-share/prices/historical-batch`
 
 价格数据模块，提供 A 股行情快照与历史 K 线序列。
 所有接口均返回统一响应信封 `ApiResponse`，业务错误经 `code` 字段表达，HTTP 状态码恒为 200。
@@ -120,7 +121,7 @@ GET /api/a-share/prices/historical
 
 | 参数 | 位置 | 类型 | 必需 | 说明 | 默认值 |
 |---|---|---|---|---|---|
-| `thscode` | query | string | 是 | 单只标的 thscode，**不接受逗号**。多标的请分多次请求。 | - |
+| `thscode` | query | string | 是 | 单只标的 thscode，**不接受逗号**。多标的使用本页批量历史 K 线接口。 | - |
 | `interval` | query | string | 是 | K 线周期，**当前仅支持** `1d`(日线)。 | `1d` |
 | `start` | query | long | 是 | 起始时间，毫秒 Unix 时间戳。缺失返回 `code=1001`。 | - |
 | `end` | query | long | 是 | 结束时间，毫秒 Unix 时间戳。`end - start` 超过 10 年返回 `code=1003`。 | - |
@@ -180,3 +181,93 @@ curl 'https://fuyao.aicubes.cn/api/a-share/prices/historical?thscode=600519.SH&i
 | `close_price` | number | 收盘价。 |
 | `volume` | number | 成交量（股）。 |
 | `turnover` | number | 成交额（原始货币）。 |
+
+<a id="prices-historical-batch"></a>
+<a id="prices-historical-batch--historical-batch"></a>
+<a id="prices-historical-batch--批量历史-k-线"></a>
+## 批量历史 K 线
+
+```text
+GET /api/a-share/prices/historical-batch
+```
+
+在同一时间窗口比较多只 A 股的历史走势。单次最多 10 个代码，支持 `1d` / `1w` / `1mo`，窗口跨度最长 10 个自然年；复权方式为 `forward` / `none` / `backward`，默认 `forward`。
+
+这是原生批量查询接口；所有代码共用查询条件。去除代码首尾空白、按现有代码格式规范化后去重，按首次出现顺序返回。上限先按原始代码项数检查，重复代码仍占用请求额度。
+
+<a id="prices-historical-batch--请求参数"></a>
+### 请求参数
+
+| 参数 | 位置 | 类型 | 必需 | 说明 | 默认值 |
+|---|---|---|---|---|---|
+| `thscodes` | query | string | 是 | 英文逗号分隔的完整代码，如 `600519.SH,000001.SZ`；最多 10 个，按去重前数量计数。 | — |
+| `interval` | query | string | 是 | K 线周期：`1d`（日线）/ `1w`（周线）/ `1mo`（月线）。 | — |
+| `start` | query | long | 是 | 起始时间，毫秒 Unix 时间戳。缺失返回 `code=1001`；须为非负毫秒时间戳。 | - |
+| `end` | query | long | 是 | 结束时间，毫秒 Unix 时间戳。`end - start` 超过 10 年返回 `code=1003`；须为非负毫秒时间戳。 | - |
+| `adjust` | query | string | 否 | 复权方式：`none` / `forward`(前复权) / `backward`(后复权)。 | `forward` |
+
+<a id="prices-historical-batch--请求示例"></a>
+### 请求示例
+
+```bash
+curl 'https://fuyao.aicubes.cn/api/a-share/prices/historical-batch?thscodes=600519.SH,000001.SZ&interval=1d&start=1735660800000&end=1767196800000&adjust=forward' \
+  -H 'X-api-key: <your-api-key>'
+```
+
+<a id="prices-historical-batch--响应示例"></a>
+### 响应示例
+
+以下示例包含一个有记录的标的组和一个合法空组。
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "request_id": "compact-batch-example",
+  "data": {
+    "interval": "1d",
+    "adjust": "forward",
+    "item": [
+      {
+        "thscode": "600519.SH",
+        "timestamp": 1767110400000,
+        "item": [
+          {
+            "date_ms": 1767110400000,
+            "open_price": 1611.602,
+            "high_price": 1626.602,
+            "low_price": 1601.722,
+            "close_price": 1602.612,
+            "volume": 3142572,
+            "turnover": 5401389334.87
+          }
+        ]
+      },
+      {
+        "thscode": "000001.SZ",
+        "timestamp": null,
+        "item": []
+      }
+    ]
+  }
+}
+```
+
+<a id="prices-historical-batch--返回字段"></a>
+### 返回字段
+
+`data` 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `interval` | string | `1d` / `1w` / `1mo`，整批共用。 |
+| `adjust` | string | `forward` / `none` / `backward`，与本次请求一致。 |
+| `item` | array | 按规范化代码首次出现顺序返回的有效标的组。 |
+| `item[].thscode` | string | 该组的完整同花顺代码。 |
+| `item[].timestamp` | long \| null | 该组数据时间；合法空组为 `null`。 |
+| `item[].item` | array | 该标的的原始业务记录；合法空组为 `[]`。 |
+
+每组 `item[]` 沿用原 K 线字段和升序；K 线记录本身不增加标的代码。
+详细业务字段、单位和空值说明见[历史 K 线](#prices-historical--响应字段)。
+
+有效标的按规范化代码首次出现顺序返回；未知或资产类型不匹配的代码省略其组，保留有效目标组并返回外层 `code=0`。有效标的无记录时保留 `{thscode,timestamp:null,item:[]}`。去重后仅一个目标且类型不支持返回 `3004`；其它全部无有效目标返回 `3001`。参数、整体上游或协议错误返回普通非零信封，`data=null`；目录不可用或身份歧义按整体错误处理。

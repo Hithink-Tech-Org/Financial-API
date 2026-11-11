@@ -14,15 +14,11 @@ import {
   type RemoteCapabilityDescriptor,
 } from '../../contracts/remote-capabilities.js';
 import { localCapabilities } from '../../contracts/local-capabilities.js';
+import { authCapabilities } from '../../contracts/auth-capabilities.js';
 import { successEnvelope } from '../../contracts/envelope.js';
 import { CliError } from '../../contracts/errors.js';
 import { renderResult } from '../../output/renderer.js';
-
-const remoteOutputOption = {
-  flags: '--output <path>',
-  description: 'write the full JSON response envelope to a file',
-  type: 'string' as const,
-};
+import { remoteOutputOptions, tableOutputOptions } from '../../contracts/output-options.js';
 
 /**
  * 注册 schema 查询命令
@@ -38,6 +34,18 @@ export function registerSchemaCommand(program: Command, context: CliContext): vo
     .command('schema <command>')
     .description(localizeText(context.language, 'Show a command contract'))
     .action(async (id: string) => {
+      const auth = authCapabilities.find((item) => item.id === id);
+      if (auth) {
+        await renderResult(
+          successEnvelope(
+            'schema',
+            { ...auth, source: 'authentication', globalOptions: tableOutputOptions },
+            { requestId: context.requestId },
+          ),
+          context,
+        );
+        return;
+      }
       // 在远程和本地能力中搜索匹配的命令
       const capability = [...remoteCapabilities, ...localCapabilities].find(
         (item) => item.id === id || item.command.join('.') === id,
@@ -59,7 +67,8 @@ export function registerSchemaCommand(program: Command, context: CliContext): vo
             ? {
                 id: capability.id,
                 command: capability.command,
-                options: [...capability.options, remoteOutputOption],
+                options: [...capability.options, ...remoteOutputOptions],
+                globalOptions: tableOutputOptions,
                 paging: capability.paging,
                 window: capability.window,
               }
@@ -68,6 +77,7 @@ export function registerSchemaCommand(program: Command, context: CliContext): vo
                 command: capability.command,
                 description: capability.description,
                 options: capability.options,
+                globalOptions: tableOutputOptions,
                 source: 'local',
               },
           { requestId: context.requestId },

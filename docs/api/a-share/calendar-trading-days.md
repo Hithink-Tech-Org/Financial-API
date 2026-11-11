@@ -1,6 +1,6 @@
 # 交易日历
 
-[业务导航](README.md)
+[业务导航](../meta/README.md)
 
 交易日历模块，提供 A 股近一年交易日序列。
 返回统一响应信封 `ApiResponse`，业务错误经 `code` 字段表达，HTTP 状态码恒为 200。

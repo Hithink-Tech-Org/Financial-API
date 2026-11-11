@@ -12,7 +12,20 @@
  */
 
 /** 对象脱敏时需检查的敏感键名集合（所有键名已标准化为纯小写字母） */
-const SECRET_KEYS = new Set(['apikey', 'token', 'authorization', 'cookie', 'secret', 'password']);
+const SECRET_KEYS = new Set([
+  'apikey',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'idtoken',
+  'codeverifier',
+  'verifier',
+  'authorizationcode',
+  'authorization',
+  'cookie',
+  'secret',
+  'password',
+]);
 
 /**
  * 识别敏感赋值的正则表达式
@@ -24,7 +37,7 @@ const SECRET_KEYS = new Set(['apikey', 'token', 'authorization', 'cookie', 'secr
  * - 使用全局 + 不区分大小写 + Unicode 模式
  */
 const SECRET_ASSIGNMENT =
-  /\b(api[-_ ]?key|apikey|token|authorization|cookie|secret|password)\s*([=:])\s*([^\s,;]+)/giu;
+  /\b(api[-_ ]?key|apikey|(?:access[_-]?|refresh[_-]?|id[_-]?)?token|code[_-]?verifier|verifier|authorization[_-]?code|authorization|cookie|secret|password)\s*([=:])\s*([^\s,;]+)/giu;
 
 /**
  * 对字符串文本中的敏感赋值进行脱敏处理
@@ -43,6 +56,10 @@ export function redactText(value: string, knownSecrets: readonly string[] = []):
   let redacted = value.replace(SECRET_ASSIGNMENT, (_match, key: string, separator: string) => {
     return `${key}${separator}[REDACTED]`;
   });
+  redacted = redacted.replace(
+    new RegExp('\\bBearer\\s+[A-Za-z0-9._~+/-]+=*', 'giu'),
+    'Bearer [REDACTED]',
+  );
   // 第二步：替换所有已知的秘密字符串（直接字符串匹配，非正则）
   for (const secret of knownSecrets) {
     if (secret.length > 0) redacted = redacted.replaceAll(secret, '[REDACTED]');

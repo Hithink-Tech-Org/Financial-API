@@ -10,7 +10,7 @@
  * @module duckdb/connection
  */
 
-import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
+import type { DuckDBConnection } from '@duckdb/node-api';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
@@ -107,6 +107,7 @@ export interface OpenDatabase {
  * @returns 打开的数据库对象
  */
 export async function openDatabase(databasePath: string): Promise<OpenDatabase> {
+  const { DuckDBInstance } = await import('@duckdb/node-api');
   // 确保使用绝对路径，避免工作目录变化导致路径错误
   const absolutePath = path.resolve(databasePath);
   // 自动创建数据库文件所在目录

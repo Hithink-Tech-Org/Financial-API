@@ -23,11 +23,3 @@
 | --- | --- | --- |
 | [期权K线](get_options_prices_daily.md) | `get_options_prices_daily` | 公开 |
 | [期权分时](get_options_prices_intraday.md) | `get_options_prices_intraday` | 公开 |
-
-## 交易日程
-
-交易日、交易时段与会话时间。
-
-| 需求 / 文档 | 接口或工具 | 使用范围 |
-| --- | --- | --- |
-| [期权会话时间轴](get_options_calendar_session_timeline.md) | `get_options_calendar_session_timeline` | 公开 |

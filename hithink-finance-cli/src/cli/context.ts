@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import { resolveLanguage, type Language } from './i18n.js';
 
 /**
@@ -21,7 +22,7 @@ import { resolveLanguage, type Language } from './i18n.js';
  * - `json`   — pretty-printed JSON. 格式化 JSON。
  * - `ndjson` — newline-delimited JSON streams. 换行分隔 JSON 流。
  * - `csv`    — comma-separated values. 逗号分隔值。
- * - `table`  — ASCII table via `cli-table3`. ASCII 表格。
+ * - `table`  — width-aware terminal table. 终端表格。
  */
 export type OutputFormat = 'auto' | 'json' | 'ndjson' | 'csv' | 'table';
 
@@ -30,6 +31,8 @@ export type OutputFormat = 'auto' | 'json' | 'ndjson' | 'csv' | 'table';
  * 注入到每个命令 action 和渲染管线的共享上下文。
  */
 export interface CliContext {
+  /** Exit status for a completed command whose result is a state predicate. */
+  exitCode?: number;
   /** Selected output format. 选择的输出格式。 */
   format: OutputFormat;
   /** Human-interface language. 界面语言。 */
@@ -50,6 +53,12 @@ export interface CliContext {
   signal: AbortSignal;
   /** Whether redacted diagnostic details should be included in error output. */
   debug: boolean;
+  /** Human table controls; machine formats and exports use the complete result. */
+  maxRows?: number;
+  tableColumns?: readonly string[];
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  stdin?: Readable;
 }
 
 /**
@@ -67,16 +76,14 @@ export interface CliContext {
  *          选项值字符串，如果未传入该选项则返回 `undefined`。
  */
 export function optionValue(argv: readonly string[], name: string): string | undefined {
-  // 支持 --name=value 内联形式
   const inlinePrefix = `${name}=`;
-  const inline = argv.find((argument) => argument.startsWith(inlinePrefix));
-  if (inline !== undefined) {
-    return inline.slice(inlinePrefix.length);
+  const separator = argv.indexOf('--');
+  for (let index = (separator < 0 ? argv.length : separator) - 1; index >= 0; index--) {
+    const argument = argv[index];
+    if (argument?.startsWith(inlinePrefix)) return argument.slice(inlinePrefix.length);
+    if (argument === name) return argv[index + 1];
   }
-
-  // 支持 --name value 空格分隔形式
-  const index = argv.indexOf(name);
-  return index >= 0 ? argv[index + 1] : undefined;
+  return undefined;
 }
 
 /**
@@ -96,38 +103,63 @@ export function optionValue(argv: readonly string[], name: string): string | und
  */
 export function createCliContext(
   argv: readonly string[],
-  defaults: { format?: OutputFormat; language?: Language; signal?: AbortSignal } = {},
+  defaults: {
+    format?: OutputFormat;
+    language?: Language;
+    signal?: AbortSignal;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    stdin?: Readable;
+    stdout?: NodeJS.WriteStream;
+    stderr?: NodeJS.WriteStream;
+  } = {},
 ): CliContext {
+  const env = defaults.env ?? process.env;
+  const stdout = defaults.stdout ?? process.stdout;
+  const stderr = defaults.stderr ?? process.stderr;
   const rawFormat = optionValue(argv, '--format');
   // 验证格式值的合法性，不合法则回退到默认值
   const format: OutputFormat =
-    rawFormat === 'json' || rawFormat === 'ndjson' || rawFormat === 'csv' || rawFormat === 'table'
+    rawFormat === 'auto' ||
+    rawFormat === 'json' ||
+    rawFormat === 'ndjson' ||
+    rawFormat === 'csv' ||
+    rawFormat === 'table'
       ? rawFormat
       : (defaults.format ?? 'auto');
 
   // 语言解析优先级：CLI 参数 > 配置文件 > 系统 locale 环境变量
   const language = resolveLanguage(
     optionValue(argv, '--lang') ?? defaults.language,
-    process.env.LC_ALL ?? process.env.LC_MESSAGES ?? process.env.LANG,
+    env.LC_ALL ?? env.LC_MESSAGES ?? env.LANG,
   );
 
   return {
     format,
+    maxRows: /^\d+$/u.test(optionValue(argv, '--max-rows') ?? '20')
+      ? Number(optionValue(argv, '--max-rows') ?? 20)
+      : NaN,
+    ...(optionValue(argv, '--columns') === undefined
+      ? {}
+      : {
+          tableColumns: optionValue(argv, '--columns')!
+            .split(',')
+            .map((field) => field.trim()),
+        }),
     language,
+    cwd: defaults.cwd ?? process.cwd(),
+    env,
+    stdin: defaults.stdin ?? process.stdin,
     // 仅在 TTY 终端且未设置 NO_COLOR 时启用颜色
-    color:
-      process.stderr.isTTY === true &&
-      process.env.NO_COLOR === undefined &&
-      !argv.includes('--no-color'),
+    color: stderr.isTTY === true && env.NO_COLOR === undefined && !argv.includes('--no-color'),
     // requestId: CLI 传入 > 随机 UUID
     requestId: optionValue(argv, '--request-id') ?? randomUUID(),
-    stdout: process.stdout,
-    stderr: process.stderr,
+    stdout,
+    stderr,
     signal: defaults.signal ?? new AbortController().signal,
     debug:
       argv.includes('--debug') ||
-      process.env.DEBUG?.split(',').some((value) => value.trim().startsWith('hithink-finance')) ===
-        true,
+      env.DEBUG?.split(',').some((value) => value.trim().startsWith('hithink-finance')) === true,
   };
 }
 
@@ -155,6 +187,8 @@ export function inferCommand(argv: readonly string[]): string {
     '--config',
     '--source',
     '--request-id',
+    '--max-rows',
+    '--columns',
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {

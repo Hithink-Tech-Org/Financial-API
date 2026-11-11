@@ -38,7 +38,7 @@ describe('result envelopes', () => {
     const result = errorEnvelope('doctor', error, '0.1.5', {
       debug: true,
       requestId: 'req_debug',
-      bugReportBaseUrl: 'https://github.com/HiThink-Tech/Financial-API/issues',
+      bugReportBaseUrl: 'https://example.test/issues',
     });
 
     expect(JSON.stringify(result)).not.toContain('super-secret');

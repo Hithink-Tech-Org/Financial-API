@@ -16,8 +16,8 @@
 
 | API | 方法与路径 | 说明 |
 |---|---|---|
-| 飙升榜 | `GET /api/a-share/special-data/skyrocket-list` | 查询 A 股热度排名飙升榜 Top30，支持日榜与小时榜。 |
-| A股热股榜单 | `GET /api/a-share/special-data/hot-stock-list` | 查询 A 股热股榜单 Top30，支持 24 小时级别与小时级别。 |
+| 飙升榜 | `GET /api/a-share/special-data/skyrocket-list` | 查询 A 股热度排名飙升榜，默认30条、可选最多100条，支持日榜与小时榜。 |
+| A股热股榜单 | `GET /api/a-share/special-data/hot-stock-list` | 查询 A 股热股榜单，默认30条、可选最多100条，支持 24 小时级别与小时级别。 |
 | 历史热股排行 | `GET /api/a-share/special-data/hot-stock-list-history` | 按自然日返回历史热股榜排行。 |
 | 个股排名走势 | `GET /api/a-share/special-data/hot-stock-rank-trend` | 查询单只 A 股一段时间内的热榜排名走势。 |
 
@@ -29,7 +29,7 @@
 GET /api/a-share/special-data/skyrocket-list
 ```
 
-查询 A 股热度排名飙升榜 Top30。`period=day` 返回日榜，`period=hour` 返回小时榜；省略 `period` 时默认返回日榜。
+查询 A 股热度排名飙升榜，默认30条、可选最多100条。`period=day` 返回日榜，`period=hour` 返回小时榜；省略 `period` 时默认返回日榜。
 
 <a id="special-data-skyrocket-list--请求参数"></a>
 ### 请求参数
@@ -37,6 +37,7 @@ GET /api/a-share/special-data/skyrocket-list
 | 参数 | 位置 | 类型 | 必需 | 说明 | 默认值 |
 |---|---|---|---|---|---|
 | `period` | query | enum | 否 | 榜单周期：`day` 日榜 / `hour` 小时榜。 | `day` |
+| `limit` | query | integer | 否 | 返回1至100条，不足时按实际条数。 | `30` |
 
 <a id="special-data-skyrocket-list--请求示例"></a>
 ### 请求示例
@@ -74,12 +75,12 @@ curl 'https://fuyao.aicubes.cn/api/a-share/special-data/skyrocket-list?period=ho
 <a id="special-data-skyrocket-list--响应字段"></a>
 ### 响应字段
 
-`data` 为 `DataPayload<HotListItem>`：
+`data` 元数据：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `timestamp` | long | 榜单时间戳，毫秒级 Unix 时间戳。 |
-| `item` | array | 榜单股票条目，最多 30 条。 |
+| `item` | array | 榜单股票条目，按limit返回，默认30条、最多100条，不足请求条数时返回实际条数。 |
 
 `item[]` 字段：
 
@@ -107,7 +108,7 @@ curl 'https://fuyao.aicubes.cn/api/a-share/special-data/skyrocket-list?period=ho
 GET /api/a-share/special-data/hot-stock-list
 ```
 
-查询 A 股热股榜单 Top30。`period=day` 返回 24 小时级别榜单，`period=hour` 返回小时级别榜单；省略 `period` 时默认返回 24 小时级别榜单。
+查询 A 股热股榜单，默认30条、可选最多100条。`period=day` 返回 24 小时级别榜单，`period=hour` 返回小时级别榜单；省略 `period` 时默认返回 24 小时级别榜单。
 
 <a id="special-data-hot-stock-list--请求参数"></a>
 ### 请求参数
@@ -115,6 +116,7 @@ GET /api/a-share/special-data/hot-stock-list
 | 参数 | 位置 | 类型 | 必需 | 说明 | 默认值 |
 |---|---|---|---|---|---|
 | `period` | query | enum | 否 | 榜单周期：`day` 24 小时级别 / `hour` 小时级别。 | `day` |
+| `limit` | query | integer | 否 | 返回1至100条，不足时按实际条数。 | `30` |
 
 <a id="special-data-hot-stock-list--请求示例"></a>
 ### 请求示例
@@ -168,7 +170,7 @@ curl 'https://fuyao.aicubes.cn/api/a-share/special-data/hot-stock-list?period=da
 GET /api/a-share/special-data/hot-stock-list-history
 ```
 
-按自然日返回历史热股榜排行。对外只接受 `date=yyyy-MM-dd`，服务端统一按 `Asia/Shanghai` 当日 00:00 转上游秒级时间戳，避免调用方直接传时间戳导致未对齐自然日。
+按自然日返回历史热股榜排行。日期参数为 `date=yyyy-MM-dd`，按北京时间自然日查询。
 
 <a id="special-data-hot-stock-list-history--请求参数"></a>
 ### 请求参数

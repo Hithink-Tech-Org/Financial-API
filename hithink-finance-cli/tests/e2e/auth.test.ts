@@ -1,10 +1,23 @@
 import { execa } from 'execa';
 import { expect, test } from 'vitest';
 
+test('unconnected auth status returns exit 3 and a readable status without writing credentials', async () => {
+  const result = await execa('node', ['dist/cli/main.js', 'auth', 'status', '--format', 'json'], {
+    reject: false,
+  });
+  expect(result.exitCode).toBe(3);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    ok: true,
+    command: 'auth.status',
+    data: { connected: false, pending: null },
+  });
+  expect(result.stderr).toBe('');
+});
+
 test('auth login fails non-interactively without exposing or storing a key', async () => {
   const result = await execa(
     'node',
-    ['dist/cli/main.js', 'auth', 'login', '--no-input', '--format', 'json'],
+    ['dist/cli/main.js', 'auth', 'login', '--method', 'api-key', '--no-input', '--format', 'json'],
     { reject: false },
   );
 

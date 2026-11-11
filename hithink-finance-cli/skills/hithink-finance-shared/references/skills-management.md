@@ -10,6 +10,7 @@ hithink-finance skills remove --format json
 
 ## 参数选择策略
 
+- 内容来自 CLI 包内的 Skills 与 manifest，发布到用户级共享目录，再链接到选定 Agent。
 - 首次安装和升级默认读取已保存策略：`auto` 仅检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy 与 QClaw；仅存在历史 `skills` 目录不算客户端证据，也不会创建未检测到的根目录。
 - 安装时可用 `HITHINK_FINANCE_SKILLS_AGENTS=auto` 或逗号分隔的目标替换策略。安装后 `sync --agent <name>` 是追加，不会移除已选目标；`sync --agent auto` 恢复自动检测并保留显式目标。
 - `status` 同时报告包内 manifest、共享内容、策略和逐目标文件验证。`ready` 只表示文件和链接/副本有效，不代表客户端已经加载；必要时新建会话。
@@ -21,5 +22,5 @@ hithink-finance skills remove --format json
 ## 常见错误
 
 - npm 禁用生命周期脚本时，安装完成后运行 `hithink-finance skills sync --repair --format json`；直接 `npm uninstall -g` 不能保证清理托管链接，先运行 `hithink-finance skills remove`。
-- 目标冲突、链接权限或客户端不发现链接时，先运行 `skills status --format json`；确认客户端支持后可对该单一目标重新执行 `sync --agent <name> --copy`。
+- 目标冲突、链接权限或客户端不发现链接时，先运行 `skills status --format json`；确认客户端不兼容链接后可对该单一目标重新执行 `sync --agent <name> --copy`。
 - 不要手工删除或覆盖用户自建 Skill、未知同名目录或非 `hithink-finance-*` 内容。

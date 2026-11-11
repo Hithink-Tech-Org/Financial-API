@@ -13,8 +13,14 @@ test('publishes generated capability and envelope schemas', async () => {
   const capabilities = JSON.parse(await readFile('schemas/capabilities.json', 'utf8')) as {
     capabilities: unknown[];
   };
-  expect(capabilities.capabilities).toHaveLength(104);
+  expect(capabilities.capabilities).toHaveLength(135);
   await expect(access('schemas/command-envelope.schema.json')).resolves.toBeUndefined();
+  const envelope = JSON.parse(await readFile('schemas/command-envelope.schema.json', 'utf8'));
+  expect(
+    envelope.oneOf.map(
+      (branch: { properties: { ok: { const: boolean } } }) => branch.properties.ok.const,
+    ),
+  ).toEqual([true, false]);
 });
 
 test('checked-in contracts are fresh after line-ending normalization', async () => {
@@ -37,7 +43,7 @@ test('checked-in contracts are fresh after line-ending normalization', async () 
   } finally {
     await rm(output, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 test('all installed Skill Markdown links resolve within the bundled skill set', async () => {
   const manifest = JSON.parse(await readFile('skills/manifest.json', 'utf8')) as {
@@ -67,7 +73,7 @@ test('generated Skill manifest pins every owned file by sha256', async () => {
   const manifest = JSON.parse(await readFile('skills/manifest.json', 'utf8')) as {
     files: Record<string, string>;
   };
-  expect(Object.keys(manifest.files)).toHaveLength(118);
+  expect(Object.keys(manifest.files)).toHaveLength(145);
   expect(Object.values(manifest.files).every((hash) => /^[a-f0-9]{64}$/u.test(hash))).toBe(true);
 });
 

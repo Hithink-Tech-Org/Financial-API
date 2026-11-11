@@ -1,15 +1,14 @@
 /**
  * 认证命令模块
  *
- * 注册 `auth login`、`auth status`、`auth logout` 三个子命令，
- * 管理 API Key 的存储、查询和删除（基于系统凭据管理器）。
+ * 管理共享 OAuth/API Key 的登录、状态、切换、迁移和退出。
  *
  * 支持三种 API Key 输入方式：
  * 1. `--api-key <key>`：兼容旧调用的弃用输入（有泄露风险）
  * 2. `--api-key-stdin`：从标准输入管道读取（推荐）
  * 3. 交互式隐藏输入：TTY 环境下使用 muted writable stream 遮蔽回显
  *
- * 凭据通过 {@link ApiKeyAuthProvider} 持久化到操作系统的凭据管理器中。
+ * 凭据通过 GlobalAuthProvider 使用当前用户的共享存储。
  */
 
 import { createInterface } from 'node:readline/promises';
@@ -17,12 +16,14 @@ import type { Readable } from 'node:stream';
 import { Writable } from 'node:stream';
 import type { Command } from 'commander';
 import type { CliContext } from '../../cli/context.js';
-import { localizeText, translate } from '../../cli/i18n.js';
+import { localizeText } from '../../cli/i18n.js';
 import type { PackageMetadata } from '../../cli/program.js';
 import { successEnvelope } from '../../contracts/envelope.js';
 import { cancelledError, CliError } from '../../contracts/errors.js';
 import { renderResult } from '../../output/renderer.js';
-import type { ApiKeyAuthProvider } from '../../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../../infrastructure/credentials/global-provider.js';
+import { startOAuthLogin } from '../../infrastructure/credentials/oauth-login.js';
+import { authError } from '../../infrastructure/credentials/auth-paths.js';
 import { readStdin } from '../../infrastructure/filesystem/stdin.js';
 
 interface AuthOptions {
@@ -32,6 +33,10 @@ interface AuthOptions {
   input?: boolean;
   all?: boolean;
   replace?: boolean;
+  method?: 'oauth' | 'api-key';
+  background?: boolean;
+  browser?: boolean;
+  legacyProfile?: string;
 }
 
 const apiKeyHint =
@@ -115,143 +120,165 @@ export async function readHiddenApiKey(
   }
 }
 
-/**
- * 注册认证相关命令
- *
- * 创建 `auth` 命令组及其三个子命令：
- *
- * ### auth login
- * 存储 API Key 到系统凭据管理器。
- * - 输入来源优先级：`--api-key` > `--api-key-stdin` > 交互式隐藏输入
- * - `--api-key` 的统一弃用警告由根命令 preAction 输出
- * - `--no-input` 时若未提供 API Key 则报错
- * - 支持通过 `--profile` 指定凭据配置名称（默认 'default'）
- *
- * ### auth status
- * 检查指定 profile 的 API Key 是否已配置。
- *
- * ### auth logout
- * 删除指定 profile 的 API Key。
- * - `--all` 选项删除所有 hithink-finance 相关的凭据
- *
- * @param program - Commander 根程序实例
- * @param context - CLI 上下文
- * @param metadata - 包元数据（版本号等）
- * @param provider - API Key 认证提供者（封装凭据管理器操作）
- */
 export function registerAuthCommands(
   program: Command,
   context: CliContext,
   metadata: PackageMetadata,
-  provider: ApiKeyAuthProvider,
+  provider: GlobalAuthProvider,
 ): void {
   const auth = program
     .command('auth')
-    .description(localizeText(context.language, 'Manage API key authentication'));
+    .description(localizeText(context.language, 'Manage global authentication'));
   const login = auth
     .command('login')
-    .description(localizeText(context.language, 'Store an API key in the system credential store'))
+    .description(localizeText(context.language, 'Sign in and activate a credential'))
+    .option('--method <method>', localizeText(context.language, 'oauth or api-key'))
+    .option(
+      '--background',
+      localizeText(context.language, 'return after the authorization worker is ready'),
+    )
+    .option(
+      '--no-browser',
+      localizeText(context.language, 'print the authorization URL without opening a browser'),
+    )
     .option(
       '--replace',
-      localizeText(context.language, 'replace the existing API key for this profile'),
+      localizeText(context.language, 'replace the saved API key after successful validation'),
     );
-
   login.action(async () => {
     const options = login.optsWithGlobals<AuthOptions>();
-    // 检查冲突：--api-key 和 --api-key-stdin 不能同时使用
-    if (options.apiKey !== undefined && options.apiKeyStdin === true) {
+    const hasKey = options.apiKey !== undefined || options.apiKeyStdin === true;
+    if (options.method && !['oauth', 'api-key'].includes(options.method))
+      throw authError('CLI_INVALID_ARGUMENT', 'Choose oauth or api-key.');
+    if (
+      (options.method === 'oauth' && hasKey) ||
+      (options.apiKey !== undefined && options.apiKeyStdin)
+    ) {
       throw new CliError({
         code: 'CLI_CONFLICTING_ARGUMENTS',
         category: 'validation',
-        message: '--api-key and --api-key-stdin cannot be used together.',
-        hint: 'Choose exactly one API key input method.',
+        message: 'Choose one authentication method and one key input.',
+        hint: 'Remove the conflicting method or input option.',
         retryable: false,
         exitCode: 2,
       });
     }
-
-    if (options.apiKey === undefined && options.apiKeyStdin !== true && options.input === false) {
-      throw new CliError({
-        code: 'CLI_MISSING_ARGUMENT',
-        category: 'validation',
-        message: 'An API key is required when --no-input is set.',
-        hint: apiKeyHint,
-        retryable: false,
-        exitCode: 2,
+    const method =
+      options.method ??
+      (hasKey ? 'api-key' : await provider.loginMethod(options.profile ?? 'default'));
+    if (method === 'oauth') {
+      const humanProgress =
+        !options.background &&
+        context.stderr.isTTY === true &&
+        (context.format === 'table' ||
+          (context.format === 'auto' && context.stdout.isTTY === true));
+      if (humanProgress)
+        context.stderr.write(localizeText(context.language, 'Preparing sign-in...') + '\n');
+      let lastProgress: string | undefined;
+      await startOAuthLogin({
+        background: options.background === true,
+        noBrowser: options.browser === false,
+        signal: context.signal,
+        output: (url) => context.stdout.write(url + '\n'),
+        language: context.language,
+        progress: (phase) => {
+          const message =
+            phase === 'waiting'
+              ? 'Complete sign-in and approval in your browser.'
+              : 'Completing sign-in...';
+          if (humanProgress && message !== lastProgress) {
+            context.stderr.write(localizeText(context.language, message) + '\n');
+            lastProgress = message;
+          }
+        },
       });
+      if (options.background) return;
+    } else {
+      if (options.background)
+        throw authError(
+          'CLI_CONFLICTING_ARGUMENTS',
+          'Background authorization is available for OAuth.',
+        );
+      let apiKey: string;
+      if (options.apiKey !== undefined) apiKey = options.apiKey;
+      else if (options.apiKeyStdin)
+        apiKey = await readStdin(process.stdin, {
+          stripFinalNewlines: true,
+          signal: context.signal,
+          maxBytes: 16 * 1024,
+        });
+      else {
+        if (options.input === false)
+          throw new CliError({
+            code: 'CLI_MISSING_ARGUMENT',
+            category: 'validation',
+            message: 'API key input is required.',
+            hint: apiKeyHint,
+            retryable: false,
+            exitCode: 2,
+          });
+        apiKey = await readHiddenApiKey(context);
+      }
+      await provider.login({ profile: options.profile ?? 'default', apiKey });
     }
-
-    const profile = options.profile ?? 'default';
-    const existing = await provider.status(profile);
-    if (existing.configured && options.replace !== true) {
+    const result = await provider.status();
+    await renderResult(
+      successEnvelope('auth.login', result, { requestId: context.requestId }),
+      context,
+    );
+  });
+  auth
+    .command('status')
+    .description(localizeText(context.language, 'Read local authentication state'))
+    .action(async () => {
+      const status = await provider.status();
       await renderResult(
-        successEnvelope(
-          'auth.login',
-          {
-            ...existing,
-            alreadyLoggedIn: true,
-            nextStep: translate(context.language, 'authLoginAlreadyConfigured'),
-          },
-          { requestId: context.requestId },
-        ),
+        successEnvelope('auth.status', status, { requestId: context.requestId }),
         context,
       );
-      return;
-    }
-
-    // API Key 输入来源优先级判断
-    let apiKey: string;
-    if (options.apiKey !== undefined) {
-      // 方式一：兼容旧调用；根命令已输出一次统一弃用警告
-      apiKey = options.apiKey;
-    } else if (options.apiKeyStdin === true) {
-      // 方式二：从标准输入读取（推荐，如 echo $KEY | hithink-finance auth login --api-key-stdin）
-      apiKey = await readStdin(process.stdin, {
-        stripFinalNewlines: true,
-        signal: context.signal,
-        maxBytes: 16 * 1024,
-      });
-    } else {
-      // 方式四：交互式隐藏输入（密码风格）
-      apiKey = await readHiddenApiKey(context);
-    }
-
-    const status = await provider.login({ profile, apiKey });
+      context.exitCode = status.connected ? 0 : 3;
+    });
+  const use = auth
+    .command('use')
+    .argument('<method>', localizeText(context.language, 'oauth or api-key'))
+    .description(localizeText(context.language, 'Select a saved credential'));
+  use.action(async (method: string) => {
+    if (method !== 'oauth' && method !== 'api-key')
+      throw authError('CLI_INVALID_ARGUMENT', 'Choose oauth or api-key.');
+    await provider.use(method);
     await renderResult(
-      successEnvelope(
-        'auth.login',
-        { ...status, replaced: existing.configured },
-        { requestId: context.requestId },
-      ),
+      successEnvelope('auth.use', await provider.status(), { requestId: context.requestId }),
       context,
     );
   });
-
-  const status = auth
-    .command('status')
-    .description(localizeText(context.language, 'Show whether an API key is configured'));
-  status.action(async () => {
-    const options = status.optsWithGlobals<AuthOptions>();
-    const result = await provider.status(options.profile ?? 'default');
+  const migrate = auth
+    .command('migrate')
+    .description(localizeText(context.language, 'Import previous credentials into the shared file'))
+    .option(
+      '--legacy-profile <name>',
+      localizeText(context.language, 'legacy credential to import once'),
+    );
+  migrate.action(async () => {
+    const options = migrate.optsWithGlobals<AuthOptions>();
+    await provider.migrate(options.legacyProfile);
+    const status = await provider.status();
     await renderResult(
-      successEnvelope('auth.status', result, { requestId: context.requestId }),
+      successEnvelope('auth.migrate', status, { requestId: context.requestId }),
       context,
     );
   });
-
   const logout = auth
     .command('logout')
-    .description(localizeText(context.language, 'Delete API key credentials'))
-    .option('--all', localizeText(context.language, 'delete every hithink-finance profile'));
+    .description(localizeText(context.language, 'End the active local session'))
+    .option('--all', localizeText(context.language, 'remove both saved credential types'));
   logout.action(async () => {
-    const options = logout.optsWithGlobals<AuthOptions>();
-    // 支持 --all 批量删除所有 profile 的凭据
-    if (options.all === true) await provider.logoutAll();
-    else await provider.logout(options.profile ?? 'default');
+    const all = logout.optsWithGlobals<AuthOptions>().all === true;
+    if (all) await provider.logoutAll();
+    else await provider.logout();
     await renderResult(
       successEnvelope(
         'auth.logout',
-        { removed: true, all: options.all === true, cliVersion: metadata.version },
+        { removed: true, all, cli_version: metadata.version },
         { requestId: context.requestId },
       ),
       context,

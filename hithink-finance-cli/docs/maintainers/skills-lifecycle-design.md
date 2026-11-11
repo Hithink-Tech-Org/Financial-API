@@ -1,17 +1,17 @@
 # CLI 配套 Skills 安装与更新方案
 
-状态：已实施（本地验证中）。本文中的契约已由 CLI 生命周期实现、命令帮助、生成的配套 Skill 文档和统一总 Skill 同步；真实客户端发现与跨平台安装验证仍须按下文验收项分别记录。
+状态：已实施（本地验证中）。本文中的契约已由 CLI 生命周期实现、命令帮助和生成的配套 Skill 文档同步；真实客户端发现与跨平台安装验证仍须按下文验收项分别记录。
 
 ## 目标与范围
 
-用户安装 CLI 后，已安装的主流 Agent 能发现配套 Skills；升级 CLI 后，Skills 自动保持同版本。用户可以限定目标 Agent，后续添加新 Agent；多个 Agent 共享内容，通过目录链接降低磁盘占用。
+用户单独安装 CLI 后，已安装的主流 Agent 能发现配套 Skills，并依据各自的 description 直接选择业务域；升级 CLI 后，Skills 自动保持同版本。用户可以限定目标 Agent，后续添加新 Agent；多个 Agent 共享内容，通过目录链接降低磁盘占用。
 
-本方案管理 CLI 包内 manifest 声明的配套 Skills。跨 REST/MCP/CLI/Python 的统一 `hithink-finance` Skill 保持独立发布，其 CLI 引导需同步说明新增命令。配套 `hithink-finance-shared` 负责引导安装、同步和故障处理。
+本方案管理 CLI 包内 manifest 声明的配套 Skills。领域描述负责首选路由；`hithink-finance-shared` 提供认证、输出、维护和辅助选路。独立发布的 `hithink-finance` Skill 负责 REST API 文档与接口选路，并附带 CLI 简介和安装前准备；`hithink-finance-mcp` 负责 MCP 配置和工具契约。
 
 ## 当前实现依据
 
 - [postinstall.mjs](../../scripts/postinstall.mjs) 调用包内 `skills sync --repair --yes --format json`，并标记为安装生命周期同步，不会重新启用已禁用策略。
-- [lifecycle.ts](../../src/infrastructure/skills/lifecycle.ts) 维护有限 Agent 适配表、逐目标所有权 manifest、目标父级链接检查、共享内容发布、目录链接/复制模式和进程锁；不再依赖外部 `skills add` 扩散到未知目标。
+- [lifecycle.ts](../../src/infrastructure/skills/lifecycle.ts) 维护有限 Agent 适配表、逐目标所有权 manifest、目标父级链接检查、共享内容发布、目录链接/复制模式和进程锁，从包内同步到选定目标。
 - WorkBuddy 和 QClaw 继续使用 `.workbuddy/skills`、`.qclaw/skills` 路径适配，并可将已验证且未修改的旧托管副本迁移为共享链接。正式名称和参数标识为 QClaw / `qclaw`。
 - [Skills 命令组](../../src/commands/skills/index.ts) 已提供 `status`、`sync`、`remove` 及 `--agent`、`--directory`、`--copy`；status 报告包内内容、策略、所有权和逐目标验证状态。
 
@@ -38,7 +38,7 @@
 默认安装命令保持不变：
 
 ```bash
-npm install -g hithink-finance
+npm install -g @hithink-tech/hithink-finance-cli
 ```
 
 首次安装默认采用 `auto` 策略：检测首批支持的客户端，为实际检测到的目标建立链接。没有检测结果时保留包内 Skills，不创建 Agent 根目录；状态显示“等待添加 Agent”。
@@ -50,7 +50,7 @@ PowerShell 示例：
 ```powershell
 $env:HITHINK_FINANCE_SKILLS_AGENTS = "codex,workbuddy"
 try {
-  npm install -g hithink-finance
+  npm install -g @hithink-tech/hithink-finance-cli
 } finally {
   Remove-Item Env:HITHINK_FINANCE_SKILLS_AGENTS
 }
@@ -111,7 +111,7 @@ Codex / skills / 同名链接   WorkBuddy / skills / 同名链接
 
 ## 检测与托管边界
 
-CLI 维护有限 Agent 适配表，统一客户端标识、检测依据、目标路径和链接能力。`rosie-skills` 的公开 `agents()` 可作为检测候选，接入前验证名称映射、路径覆盖和误判；本方案不以它作为必选依赖。
+CLI 维护有限 Agent 适配表，统一客户端标识、检测依据、目标路径和链接能力。
 
 自动检测区分“发现客户端配置证据”与“只有本项目生成的 Skills 目录”。尤其不能把旧版批量创建的目录重新认定为已安装客户端。结合客户端特有配置、程序位置等信号；无法确定时不自动创建目标，显式选择仍可安装。
 
@@ -127,7 +127,7 @@ CLI 维护有限 Agent 适配表，统一客户端标识、检测依据、目标
 
 ### A. 普通用户已安装 Codex、WorkBuddy、QClaw
 
-用户只运行 `npm install -g hithink-finance`。安装器自动为这三个 Agent 建立链接，其他 Agent 目录不会创建。成功路径不增加问答或冗长输出。
+用户只运行 `npm install -g @hithink-tech/hithink-finance-cli`。安装器自动为这三个 Agent 建立链接，其他 Agent 目录不会创建。成功路径不增加问答或冗长输出。
 
 随后运行 `hithink-finance skills status`，可看到：
 
@@ -149,11 +149,11 @@ QClaw       就绪  链接
 
 在场景 B 的基础上，用户运行 `hithink-finance skills sync --agent claude-code`。系统为 Claude Code 添加链接，保留 Codex，并保存这两个目标。之后升级会自动同步两者。
 
-用户也可以对已能读取统一 Skill 的 Agent 说“给 Claude Code 同步金融数据 Skills”，由 Agent 根据说明执行同一命令。全新 Agent 尚未加载任何相关 Skill 时，可通过 CLI 帮助发现命令，不能依赖它自行读取尚未安装的配套 Skill。
+用户也可以对已加载 CLI 内置 Skills 的 Agent 说“给 Claude Code 同步金融数据 Skills”，由 Agent 根据说明执行同一命令。全新 Agent 尚未加载任何相关 Skill 时，可通过 CLI 帮助发现命令，不能依赖它自行读取尚未安装的配套 Skill。
 
 ### D. 升级 CLI
 
-用户运行 `npm install -g hithink-finance@latest`，或使用 CLI 已有升级命令。新 CLI 发布共享内容、检查链接，所有已选目标使用同一新版 Skills。用户不再逐个 Agent 执行更新。
+用户运行 `npm install -g @hithink-tech/hithink-finance-cli@latest`，或使用 CLI 已有升级命令。新 CLI 发布共享内容、检查链接，所有已选目标使用同一新版 Skills。用户不再逐个 Agent 执行更新。
 
 若一个目标发生权限错误，其他成功目标仍如实记录；安装结束仅给一条简短提示，例如“Claude Code Skills 同步未完成；运行 hithink-finance skills sync 重试”。手动 sync 在部分失败时返回非零退出码；status 显示失败目标及旧版状态。
 
@@ -163,26 +163,26 @@ CLI 正常安装，不生成一批 Agent 目录。随后安装 WorkBuddy，运�
 
 ## 用户与 Agent 的说明和指引
 
-新逻辑的实现必须同时交付仓库 README、CLI help 和统一 `hithink-finance` 总 Skill 的说明，使用户和首次接入的 Agent 都能发现并理解安装规则。说明随功能发布，不作为发布后的补充任务。
+安装前准备与首次接入由 API Skill 的 CLI 指引和仓库 README 说明；安装后的规则由 CLI help 和包内 shared 维护；领域路由由 CLI 内置 description 和 shared 辅助表维护。说明随功能发布，不作为发布后的补充任务。
 
-| 入口                                                                                        | 必须说明的内容                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [仓库 README](../../../README.md)                                                           | 在 CLI 安装入口说明默认自动安装、升级自动同步、按已安装 Agent 选择目标、默认链接共享；提供首次指定目标和后续新增 Agent 的最短示例，并链接 CLI 详细说明           |
-| [CLI README](../../README.md)                                                               | 完整说明支持的 Agent、环境变量、策略持久化、追加目标、自定义目录、链接与复制、状态检查、修复和移除；提供安装、升级、新增客户端的连贯示例                         |
-| CLI `--help` 与 `skills --help`                                                             | 顶层 help 可发现 Skills 管理入口；命令组 help 简述默认安装及升级行为，并指向 status、sync、remove                                                                |
-| CLI `skills status/sync/remove --help`                                                      | 说明各参数的准确语义、合法 Agent 标识和示例，尤其明确追加目标、auto 模式、排除目标、目录覆盖及复制选择；说明失败后的下一步操作                                   |
-| [统一 hithink-finance 总 Skill](../../../skills/hithink-finance/SKILL.md) 及其 CLI 引用文档 | 说明 CLI 与配套 Skills 的关系、自动安装更新规则、目标选择和当前 Agent 缺失 Skills 时的处理流程；引导 Agent 检查状态、为自身或用户指定的新 Agent 同步，并验证结果 |
-| 配套 hithink-finance-shared、CLI capabilities/schema                                        | 同步提供操作指引与机器可读参数契约，确保 Agent 能按实际命令执行                                                                                                  |
+| 入口                                                                              | 必须说明的内容                                                                                                                                         |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [仓库 README](../../../README.md)                                                 | 在 CLI 安装入口说明默认自动安装、升级自动同步、按已安装 Agent 选择目标、默认链接共享；提供首次指定目标和后续新增 Agent 的最短示例，并链接 CLI 详细说明 |
+| [CLI README](../../README.md)                                                     | 完整说明支持的 Agent、环境变量、策略持久化、追加目标、自定义目录、链接与复制、状态检查、修复和移除；提供安装、升级、新增客户端的连贯示例               |
+| CLI `--help` 与 `skills --help`                                                   | 顶层 help 可发现 Skills 管理入口；命令组 help 简述默认安装及升级行为，并指向 status、sync、remove                                                      |
+| CLI `skills status/sync/remove --help`                                            | 说明各参数的准确语义、合法 Agent 标识和示例，尤其明确追加目标、auto 模式、排除目标、目录覆盖及复制选择；说明失败后的下一步操作                         |
+| [hithink-finance API Skill](../../../skills/hithink-finance/SKILL.md) 的 CLI 简介 | 提供 CLI 简介、安装前准备、首次授权及发现验证；安装后的具体业务使用由内置 Skills 负责                                                                  |
+| 配套 hithink-finance-shared、CLI capabilities/schema                              | 同步提供操作指引与机器可读参数契约，确保 Agent 能按实际命令执行                                                                                        |
 
-各入口保持相同的默认行为与参数语义，详细参数集中在 CLI 帮助和 CLI README 中，总览及总 Skill 提供必要解释、示例和直接链接。配套 Skills 随 CLI 更新，总 Skill 的独立发布与更新机制需说明清楚。
+各入口保持相同的默认行为与参数语义，详细参数集中在 CLI 帮助、CLI README 和配套 Skills 中，API Skill 提供简短推荐。配套 Skills 随 CLI 更新，总 Skill 的独立发布与更新机制需说明清楚。
 
-统一 Skill 中的目标引导示例：用户说“我新安装了 Claude Code，也想使用金融数据 CLI”时，Agent 应能获知并执行 `hithink-finance skills sync --agent claude-code`，理解该操作保留原有目标，并检查 Claude Code 对应的同步状态。用户未指定目标时，先识别当前 Agent；无法确定时通过 help 或必要询问确定目标，不扩大到所有客户端。
+CLI shared 中的目标引导示例：用户说“我新安装了 Claude Code，也想使用金融数据 CLI”时，Agent 应能获知并执行 `hithink-finance skills sync --agent claude-code`，理解该操作保留原有目标，并检查 Claude Code 对应的同步状态。用户未指定目标时，先识别当前 Agent；无法确定时通过 help 或必要询问确定目标，不扩大到所有客户端。
 
 说明还应覆盖自动同步的实际边界：未检测到客户端、npm 禁用安装脚本、链接失败，以及需要客户端刷新或新建会话的情况，并分别给出可执行的下一步指引。
 
 ## 实施交付与验收
 
-实现顺序：统一目标策略与检测 → 共享内容和链接管理 → 安装/升级生命周期接入 → 旧副本迁移 → CLI 命令、schema、统一 Skill 和配套 Skill 文档同步。
+实现顺序：统一目标策略与检测 → 共享内容和链接管理 → 安装/升级生命周期接入 → 旧副本迁移 → CLI 命令、schema、配套 Skill 文档及 API Skill 的简介同步。
 
 必须验证：
 
@@ -194,7 +194,7 @@ CLI 正常安装，不生成一批 Agent 目录。随后安装 WorkBuddy，运�
 6. 用户修改、未知来源冲突、指定路径、移除排除规则和旧副本迁移符合契约。
 7. 在 Windows/macOS/Linux 验证安装与升级；文件级验证和真实 Agent 发现验证分别记录。
 8. 仓库 README、CLI README、各级 help、总 Skill、配套 Skill 和 schema 对默认策略、参数与更新行为的描述一致，示例可执行、相对链接有效。
-9. 用户仅阅读仓库 README 即可完成首次安装和新增 Agent；尚未加载配套 Skills 的 Agent 通过总 Skill 或 CLI help 即可发现同步命令、理解追加语义并验证目标状态。
+9. 用户仅安装 CLI、未安装统一 Skill 时，宿主可读取包内各 Skill 的 name/description 选择领域；需要辅助选路时，shared 链接覆盖其他全部领域。首次安装与发现异常按 README、CLI help 或接入指引处理。
 
 功能与上述说明、指引和验证一并交付；实际发布并确认后再更新 Issue 的解决状态。
 
@@ -206,3 +206,27 @@ CLI 正常安装，不生成一批 Agent 目录。随后安装 WorkBuddy，运�
 - 同步使用进程互斥锁；新内容在临时目录通过 manifest 校验后发布，发布失败会恢复旧内容。逐目标同步、冲突、移除和状态文件验证都只触及 CLI 管理的路径；父级链接和移除所有权冲突会明确失败并保留用户内容。
 - 已完成隔离临时用户目录的文件级测试，包括空环境、历史目录误检、显式追加、共享链接、复制模式、链接修复和移除排除规则；CLI help、capabilities/schema、生成契约和文档同步由相应测试与构建验证。
 - 尚未完成真实 WorkBuddy/QClaw 客户端加载验证，以及 macOS/Linux 上的实际全局安装与升级验证；本记录不把文件级 `ready` 状态表述为客户端已加载。
+
+## 0.2.0 验证记录（2026-11-04）
+
+- 从 CLI 包读取 14 个 Skills，发布到用户级共享目录并为选定 Agent 建立链接；同步与安装器使用同一本地生命周期实现。
+- 修复已托管链接切换 `--copy` 时的冲突；先检查其他路径，再替换本项目拥有的链接。目标切换失败时保留原托管记录。
+- CLI 完整检查通过：格式、lint、类型、构建及 529 项测试通过，2 项跳过；Python 376 项测试通过，契约同步和本次修改的文档相对链接检查通过。
+- Windows 下从 `0.2.0` tarball 隔离安装，依赖中没有第三方 Skills 安装工具。禁止 CLI 子进程的网络请求后，安装脚本为 WorkBuddy、Codex 分别建立 14 个共享链接；切换 WorkBuddy 为复制模式后，两侧状态均为 `ready`。
+- 安装副本中验证未连接退出 3、隔离凭据可用时退出 0、重复状态检查不改写凭据，以及重复登出后退出 3。认证使用运行期生成的本地夹具；真实 OAuth 与宿主加载、macOS/Linux 实机安装仍待验收。
+- 已生成匹配 `0.2.0` 的 WorkBuddy 连接器。npm 发布与真实宿主验收分别完成后，再登记其交付结果。
+
+## Skill 审查修正（2026-11-04）
+
+- 统一 Skill、CLI 安装指引及配套 Skills 默认推荐 OAuth，先复用当前有效凭据；API Key 使用显式选择的配置流程，认证恢复沿用当前启用方式。
+- 从生成器更新全部 112 个远端命令 reference 的认证前置条件和恢复指引，并重新生成配套 Skills 与 manifest。
+- 统一路由补齐新股、资讯两个领域；契约测试按 manifest 对比全部 14 个入口，检查全局输出规则中的 `auth status` 退出码 0/3、stdout 状态和 stderr 错误语义。
+- 完整检查通过：CLI 531 项通过、2 项跳过，Python 377 项通过；格式、lint、类型、构建、文档相对链接与契约同步检查通过。
+
+## Description 首选路由（2026-11-04）
+
+- 14 个内置 Skill 的 description 各自声明任务范围，由宿主直接选择领域；领域入口与 reference 维护命令和执行约束，认证及通用输出规则按需读取 shared。
+- shared 从同一生成配置派生其他 13 个领域的辅助链接。统一接入 Skill 聚焦接入方式、首次安装与 REST/MCP 指引；CLI 接入页保留安装和发现准备。
+- 长时间初始化、锁与存活进程的执行约束保存在 CLI 的 `data init` reference，随 CLI 包独立交付。
+- 完整检查通过：CLI 532 项通过、2 项跳过，Python 377 项通过。最终生成契约定向复验通过，Skill 相对链接和契约同步检查通过。
+- 0.2.0 tarball 在隔离前缀仅安装 CLI：14 个 name/description 和 409 个本地引用验证通过，shared 辅助链接覆盖其他全部领域；禁止网络请求的安装脚本同步及凭据状态冒烟通过。此项验证包内完整性与发现目录交付；真实宿主的模型召回质量单独验收。

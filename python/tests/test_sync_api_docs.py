@@ -70,6 +70,18 @@ def test_split_preserves_common_contract_and_json(inputs):
     assert before == {p: p.read_bytes() for p in target.rglob("*") if p.is_file()}
 
 
+def test_catalog_domain_can_change_without_moving_published_pages(inputs):
+    source, target, config, _ = inputs
+    config['pages']['prices'] = ['meta', 'prices']
+    config['domains']['meta'] = {'title': '公共基础数据', 'intent': '公共行情'}
+    config['output_domains'] = {'prices': 'a-share'}
+    state = sync.synchronize(source, target, config)
+    assert all(r['domain'] == 'meta' for r in state['entries'])
+    assert all(r['output'] == 'docs/api/a-share/prices.md' for r in state['entries'])
+    text = (target / 'docs/api/meta/README.md').read_text(encoding='utf-8')
+    assert '../a-share/prices.md' in text
+
+
 def test_unrecognized_component_does_not_modify_previous_output(inputs):
     source, target, config, page = inputs
     sync.synchronize(source, target, config)

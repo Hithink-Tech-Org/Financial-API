@@ -7,6 +7,7 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILL_ROOT = REPO_ROOT / "skills" / "hithink-finance"
+MCP_ROOT = REPO_ROOT / "skills" / "hithink-finance-mcp"
 
 
 def _skill_text() -> str:
@@ -21,21 +22,23 @@ def _api_capability_text() -> str:
 
 
 def _mcp_domain_text(domain: str) -> str:
-    entry = (SKILL_ROOT / "references/mcp.md").read_text(encoding="utf-8")
-    return entry + (SKILL_ROOT / "references/mcp" / f"{domain}.md").read_text(
-        encoding="utf-8"
+    references = MCP_ROOT / "references"
+    files = [references / "mcp.md", references / "mcp" / domain / "README.md"]
+    files += sorted(
+        path
+        for path in (references / "mcp" / domain).glob("*.md")
+        if path.name != "README.md"
     )
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
 
 
-def test_hithink_finance_skill_is_the_cross_interface_agent_entry() -> None:
+def test_hithink_finance_skill_is_api_wiki_and_api_router() -> None:
     skill = _skill_text()
-
-    assert "统一 Agent 入口" in skill
-    for access_mode in ("REST API", "MCP", "CLI"):
-        assert access_mode in skill
-    assert "当前环境" in skill
-    assert "能力" in skill
-    assert "按需" in skill
+    assert "API Wiki" in skill and "API Router" in skill
+    assert "REST API" in skill and "按需" in skill
+    assert "hithink-finance-mcp" in skill
+    assert not (SKILL_ROOT / "references/mcp.md").exists()
+    assert not list((SKILL_ROOT / "references/mcp").glob("*.md"))
 
 
 def test_hithink_finance_skill_covers_recent_remote_capabilities() -> None:
@@ -72,51 +75,71 @@ def test_hithink_finance_skill_defines_safe_agent_execution_contract() -> None:
 
 
 def test_hithink_finance_mcp_entry_routes_all_managed_services() -> None:
-    entry = (SKILL_ROOT / "references" / "mcp.md").read_text(encoding="utf-8")
-
-    for service in (
-        "hithink-finance-a-share",
-        "hithink-finance-a-share-index",
-        "hithink-finance-meta",
-        "hithink-finance-fund",
-        "hithink-finance-futures",
-        "hithink-finance-options",
+    entry = (MCP_ROOT / "references/mcp.md").read_text(encoding="utf-8")
+    for domain in (
+        "meta",
+        "a-share",
+        "hk-share",
+        "a-share-index",
+        "fund",
+        "futures",
+        "options",
+        "news",
     ):
-        assert service in entry
+        assert f"https://fuyao.aicubes.cn/mcp/{domain}" in entry
+    tools = [
+        source
+        for source in (REPO_ROOT / "docs/mcp").glob("*/get_*.md")
+        if source.parent.name != "planned"
+    ]
+    assert tools
+    pages = [
+        path.read_text(encoding="utf-8")
+        for path in (MCP_ROOT / "references/mcp").glob("*/*.md")
+        if path.name != "README.md"
+    ]
+    identities = re.findall(r"^工具名：`([^`]+)`$", "\n".join(pages), re.M)
+    assert sorted(identities) == sorted(source.stem for source in tools)
+    for source in tools:
+        page = next(
+            text for text in pages if f'<a id="{source.stem}"></a>\n## ' in text
+        )
+        text = page.split(f'<a id="{source.stem}"></a>')[1]
+        text = re.split(r'<a id="get_[a-z0-9_]+"></a>\n## ', text)[0]
+        original = source.read_text(encoding="utf-8")
+        for heading in ("工具描述", "参数", "调用示例"):
+            section = re.search(
+                rf"^## {heading}\n(.*?)(?=^## |\Z)", original, re.M | re.S
+            )
+            if section:
+                # Links move to grouped pages while the contract text stays intact.
+                original_body = re.sub(r"\]\([^)]+\)", "]", section[1]).strip()
+                grouped_body = re.sub(r"\]\([^)]+\)", "]", text)
+                assert original_body in grouped_body
+        assert f"工具名：`{source.stem}`" in text
+        assert "### 参数" in text and "### 返回字段" in text
+        assert "../../api/" not in text
+    assert not list((MCP_ROOT / "references/mcp/planned").rglob("*.md"))
+    skill = (MCP_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    assert "tools/list" in skill and "schema" in skill
+    assert "references/mcp/meta/README.md" in skill
 
-    route_root = SKILL_ROOT / "references" / "mcp"
-    assert {path.name for path in route_root.rglob("*.md")} == {
-        "meta.md",
-        "a-share.md",
-        "index.md",
-        "fund.md",
-        "futures.md",
-        "options.md",
-    }
-    for route in route_root.glob("*.md"):
-        text = route.read_text(encoding="utf-8")
-        source_tools = {
-            path.stem
-            for path in (REPO_ROOT / "docs" / "mcp" / route.stem).glob("get_*.md")
-        }
-        sections = re.findall(r"^### .+（`(get_[a-z0-9_]+)`）$", text, re.M)
-        assert set(sections) == source_tools
-        assert len(sections) == len(source_tools)
-        assert text.count("**描述**") == len(sections)
-        assert text.count("**入参**") == len(sections)
-        assert text.count("**响应**") == len(sections)
-        assert "对应 REST 端点" not in text
-        assert "## 调用示例" not in text
-        assert f"mcp/{route.name}" in entry
 
-
-def test_public_checkout_can_check_skill_without_internal_sync_state(tmp_path: Path) -> None:
-    for relative in ("docs/api", "docs/mcp", "skills/hithink-finance"):
+def test_public_checkout_can_check_skill_without_internal_sync_state(
+    tmp_path: Path,
+) -> None:
+    for relative in (
+        "docs/api",
+        "docs/mcp",
+        "skills/hithink-finance",
+        "skills/hithink-finance-mcp",
+    ):
         shutil.copytree(
             REPO_ROOT / relative,
             tmp_path / relative,
             ignore=shutil.ignore_patterns("*.zip", "__pycache__"),
         )
+    shutil.copyfile(REPO_ROOT / "docs/mcp.md", tmp_path / "docs/mcp.md")
     script = tmp_path / "scripts/sync_skill_contracts.py"
     script.parent.mkdir()
     shutil.copyfile(REPO_ROOT / "scripts/sync_skill_contracts.py", script)
@@ -161,95 +184,88 @@ def test_hithink_finance_skill_routes_confirmed_client_only_capabilities() -> No
         assert public_only not in client_only
 
 
-def test_cli_entry_covers_setup_lifecycle_and_routes_to_builtin_skills() -> None:
-    cli = (SKILL_ROOT / "references" / "cli.md").read_text(encoding="utf-8")
-    setup = (SKILL_ROOT / "references" / "cli" / "setup.md").read_text(encoding="utf-8")
-    builtin = (SKILL_ROOT / "references" / "cli" / "builtin-skills.md").read_text(
-        encoding="utf-8"
-    )
-    combined = cli + setup
-
-    for command in (
-        "version --format json",
-        "auth status",
-        "skills status",
-        "skills sync",
-        "doctor",
-        "capabilities",
-        "uninstall --plan",
-    ):
-        assert command in combined
-    for topic in ("Node.js", "npm", "新会话", "最小验证", "卸载"):
-        assert topic in combined
-    for skill_name in (
-        "hithink-finance-symbol",
-        "hithink-finance-market",
-        "hithink-finance-financials",
-        "hithink-finance-index",
-        "hithink-finance-special-data",
-        "hithink-finance-data",
-        "hithink-finance-research",
-        "hithink-finance-shared",
-        "hithink-finance-fund",
-        "hithink-finance-valuation",
-    ):
-        assert skill_name in builtin
-    assert "包内官方来源" in cli and "内置 Skill" in cli
-
-
-def test_cli_skill_contract_verifies_the_active_agent_and_handles_long_data_init() -> (
-    None
-):
-    skill = _skill_text()
-    cli = (SKILL_ROOT / "references" / "cli.md").read_text(encoding="utf-8")
-    setup = (SKILL_ROOT / "references" / "cli" / "setup.md").read_text(encoding="utf-8")
-    builtin = (SKILL_ROOT / "references" / "cli" / "builtin-skills.md").read_text(
-        encoding="utf-8"
-    )
-    combined = "\n".join((skill, cli, setup, builtin))
-
+def test_api_skill_only_introduces_cli_and_delegates_its_use() -> None:
+    intro = (SKILL_ROOT / "references/cli.md").read_text(encoding="utf-8")
+    assert "npm install -g @hithink-tech/hithink-finance-cli" in intro
+    assert "OAuth" in intro and "description" in intro
+    assert "hithink-finance-shared" in intro
+    assert "## 功能简述" not in intro
+    setup = intro
     for required in (
-        "当前 Agent 的 Skills 目录",
-        "下列 Skills",
-        "不能证明当前 Agent 已发现",
-        "不要手工复制",
-        "用户占用",
+        "node --version",
+        "npm install -g",
+        "auth login --method oauth",
+        "skills status",
+        "canonical",
+        "实际Agent标识",
+        "有界真实请求",
+    ):
+        assert required in setup
+    assert "## 1. 环境与版本" in intro
+    assert not (SKILL_ROOT / "references/cli/setup.md").exists()
+    assert "hithink-finance-market" not in setup
+    assert not (SKILL_ROOT / "references/cli/builtin-skills.md").exists()
+
+
+def test_cli_owned_guidance_recommends_oauth_and_reads_connection_state() -> None:
+    shared = REPO_ROOT / "hithink-finance-cli/skills/hithink-finance-shared"
+    auth = (shared / "references/auth-and-config.md").read_text(encoding="utf-8")
+    output = (shared / "references/global-rules.md").read_text(encoding="utf-8")
+    assert "CLI 默认推荐 OAuth" in auth and "当前有效凭据" in auth
+    assert "auth login --method oauth" in auth
+    for text in (auth, output):
+        for required in (
+            "auth status",
+            "退出 0",
+            "退出 3",
+            "data.connected",
+            "ok=true",
+        ):
+            assert required in text
+
+
+def test_cli_skill_contract_keeps_execution_rules_in_the_cli_package() -> None:
+    base = REPO_ROOT / "hithink-finance-cli/skills"
+    management = (
+        base / "hithink-finance-shared/references/skills-management.md"
+    ).read_text(encoding="utf-8")
+    assert "目录建立链接" in management and "用户占用" in management
+    init = (base / "hithink-finance-data/references/data-init.md").read_text(
+        encoding="utf-8"
+    )
+    for required in (
         "data init",
         "不少于 15 分钟",
         "存活 PID",
         "不得在该 DB 上继续执行",
     ):
-        assert required in combined
+        assert required in init
 
 
-def test_skill_unifies_credentials_and_bootstraps_cli_without_reprompting() -> None:
-    skill = _skill_text()
-    setup = (SKILL_ROOT / "references" / "cli" / "setup.md").read_text(encoding="utf-8")
-    combined = skill + setup
-
+def test_api_skill_reuses_key_sources_and_preserves_secure_configuration() -> None:
+    combined = _skill_text() + (
+        SKILL_ROOT / "references/api-key-onboarding.md"
+    ).read_text(encoding="utf-8")
     for required in (
         "HITHINK_FINANCE_API_KEY",
         "credentials.env",
-        "也可以直接发给我",
-        "--api-key-stdin",
-        "--replace",
+        "找到后复用",
+        "不得强制用户",
+        "API Key",
     ):
         assert required in combined
-    for platform_path in ("%APPDATA%", "Application Support", "XDG_CONFIG_HOME"):
-        assert platform_path in combined
-    assert "不要求安装 CLI" in combined
-    assert "不再提示" in combined or "不重复" in combined
-    assert "安装失败" in combined and "回退" in combined
-    assert "系统凭据" in combined and "独立" in combined
+    for platform in ("%APPDATA%", "Application Support", "XDG_CONFIG_HOME"):
+        assert platform in combined
+    assert "Read-Host" in combined and "read -s" in combined
 
 
 def test_skill_routes_fund_tasks_across_all_access_modes() -> None:
     skill = _skill_text()
     api = _api_capability_text()
     mcp = _mcp_domain_text("fund")
-    builtin = (SKILL_ROOT / "references/cli/builtin-skills.md").read_text(
-        encoding="utf-8"
-    )
+    builtin = (
+        REPO_ROOT / "hithink-finance-cli/skills/hithink-finance-fund/SKILL.md"
+    ).read_text(encoding="utf-8")
 
     for phrase in ("基金", "净值", "持仓", "持有人", "ETF"):
         assert phrase in skill + api + mcp + builtin
@@ -279,7 +295,8 @@ def test_skill_routes_auction_and_extended_fund_tasks() -> None:
     assert "get_fund_managers_detail" in mcp_fund
     assert "get_fund_news_article_list" in mcp_fund
     assert "get_fund_backtest_result" in mcp_fund
-    assert "get_fund_indicators_table" in mcp_fund
+    assert "get_fund_indicators_table" not in mcp_fund
+    assert "get_fund_indicators_line" not in mcp_fund
     assert "get_fund_quota_list" in mcp_fund
 
 
@@ -287,9 +304,9 @@ def test_skill_routes_valuation_tasks_across_all_access_modes() -> None:
     skill = _skill_text()
     api = _api_capability_text()
     mcp = _mcp_domain_text("a-share")
-    builtin = (SKILL_ROOT / "references" / "cli" / "builtin-skills.md").read_text(
-        encoding="utf-8"
-    )
+    builtin = (
+        REPO_ROOT / "hithink-finance-cli/skills/hithink-finance-valuation/SKILL.md"
+    ).read_text(encoding="utf-8")
 
     assert "估值" in skill
     assert "/api/a-share/valuations/snapshot" in api

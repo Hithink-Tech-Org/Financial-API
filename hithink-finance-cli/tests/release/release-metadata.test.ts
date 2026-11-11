@@ -1,9 +1,13 @@
 import { access, readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 
-test('declares public monorepo release metadata and an explicit license gate', async () => {
+test('declares public npm release metadata and an explicit license gate', async () => {
   const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
     repository: unknown;
+    homepage: string;
+    bugs?: unknown;
+    version: string;
+    dependencies: Record<string, string>;
     bin: unknown;
     engines: { node: string };
     publishConfig: { access: string };
@@ -16,13 +20,13 @@ test('declares public monorepo release metadata and an explicit license gate', a
       pretest?: string;
     };
   };
-  expect(pkg.repository).toEqual({
-    type: 'git',
-    url: 'git+https://github.com/HiThink-Tech/Financial-API.git',
-    directory: 'hithink-finance-cli',
-  });
+  expect(pkg.repository).toBeUndefined();
+  expect(pkg.bugs).toBeUndefined();
+  expect(pkg.homepage).toBe('https://fuyao.aicubes.cn/docs/');
+  expect(pkg.version).toBe('0.2.0');
+  expect(pkg.dependencies.skills).toBeUndefined();
   expect(pkg.bin).toEqual({ 'hithink-finance': './dist/cli/main.js' });
-  expect(pkg.engines.node).toBe('>=22.12.0');
+  expect(pkg.engines.node).toBe('^22.13.0 || >=24.0.0');
   expect(pkg.publishConfig.access).toBe('public');
   expect(pkg.license).toBe('MIT');
   expect(pkg.scripts.prepublishOnly).toContain('check-license');
@@ -34,18 +38,14 @@ test('declares public monorepo release metadata and an explicit license gate', a
   await expect(access('CHANGELOG.md')).resolves.toBeUndefined();
   await expect(access('SECURITY.md')).resolves.toBeUndefined();
   await expect(access('docs/maintainers/npm-publishing.md')).resolves.toBeUndefined();
-  const releaseWorkflow = await readFile(
-    '../.github/workflows/hithink-finance-cli-release.yml',
-    'utf8',
+  const publishing = await readFile('docs/maintainers/npm-publishing.md', 'utf8');
+  expect(publishing).toContain(
+    'npm publish --access public --tag latest --registry=https://registry.npmjs.org',
   );
-  expect(releaseWorkflow).toContain('tags: ["v*"]');
-  expect(releaseWorkflow).toContain('ref: ${{ inputs.tag || github.ref_name }}');
-  expect(releaseWorkflow).toContain('tag/version mismatch');
-  expect(releaseWorkflow).toContain('id-token: write');
-  expect(releaseWorkflow).toContain('gh release create');
-  expect(releaseWorkflow).toContain('GH_REPO: ${{ github.repository }}');
-  expect(releaseWorkflow).toContain(`version="$(node -p "require('./package.json').version")"`);
-  expect(releaseWorkflow).toContain(`existing="$(node -p "require('./existing-version.json')")"`);
-  expect(releaseWorkflow).not.toContain(`node -p \\"`);
-  expect(releaseWorkflow).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/u);
+  expect(publishing).toContain('interactive 2FA');
+  expect(publishing).toContain('npm run verify');
+  const shrinkwrap = JSON.parse(await readFile('npm-shrinkwrap.json', 'utf8'));
+  expect(shrinkwrap.version).toBe(pkg.version);
+  expect(shrinkwrap.packages[''].version).toBe(pkg.version);
+  expect(shrinkwrap.packages['node_modules/skills']).toBeUndefined();
 });

@@ -20,16 +20,18 @@ import type { RemoteCapabilityDescriptor } from '../contracts/remote-capabilitie
 import { successEnvelope } from '../contracts/envelope.js';
 import { CliError } from '../contracts/errors.js';
 import { executeRemoteQuery } from '../application/use-cases/remote-query.js';
-import type { ApiKeyAuthProvider } from '../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../infrastructure/credentials/global-provider.js';
 import { FuyaoClient } from '../infrastructure/fuyao/client.js';
 import { renderResult } from '../output/renderer.js';
 import { chooseSource, type DataSource } from '../application/source-policy.js';
 import { openDatabase } from '../infrastructure/duckdb/connection.js';
 import { getHistory } from '../application/use-cases/market-history.js';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { readStdin } from '../infrastructure/filesystem/stdin.js';
-import { renderJson } from '../output/json.js';
+import { writeDataFile, type DataFileFormat } from '../output/files.js';
+import { dataRows } from '../output/records.js';
+import { remoteOutputOptions } from '../contracts/output-options.js';
 
 /**
  * 远程命令注册所需的依赖项集合
@@ -38,7 +40,7 @@ import { renderJson } from '../output/json.js';
  */
 export interface RemoteCommandDependencies {
   /** API Key 认证提供者，用于解析和获取有效的 API Key */
-  authProvider: ApiKeyAuthProvider;
+  authProvider: GlobalAuthProvider;
   /** Fuyao API 的基础 URL */
   baseUrl: string;
   /** 默认的本地 DuckDB 数据库文件路径 */
@@ -140,11 +142,11 @@ function rawCodes(...inputs: Array<string | undefined>): string | undefined {
   return supplied.flatMap((input) => input.replace(/\r\n?/gu, '\n').split(/[,\n]/u)).join(',');
 }
 
-async function writeOutputEnvelope(outputPath: string, envelope: unknown): Promise<string> {
-  const absolutePath = path.resolve(process.cwd(), outputPath);
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, renderJson(envelope), 'utf8');
-  return absolutePath;
+function codeFileTokens(input: string | undefined): string | undefined {
+  return input
+    ?.split(/\r?\n/u)
+    .filter((line) => line.trim().length > 0)
+    .join(',');
 }
 
 /**
@@ -210,10 +212,7 @@ export function registerRemoteCapabilityGroup(
         option.flags.startsWith('--thscodes ') && capability.id !== 'valuation.snapshot';
       addDescriptorOption(leaf, batchInput ? { ...option, required: false } : option, context);
     }
-    leaf.option(
-      '--output <path>',
-      localizeText(context.language, 'write the full JSON response envelope to a file'),
-    );
+    for (const option of remoteOutputOptions) addDescriptorOption(leaf, option, context);
     // 检查该能力是否接受多个股票代码作为输入
     const acceptsMultipleCodes = capability.options.some((option) =>
       option.flags.startsWith('--thscodes '),
@@ -232,7 +231,17 @@ export function registerRemoteCapabilityGroup(
         codesFile?: string;
         codesStdin?: boolean;
         output?: string;
+        fileFormat: DataFileFormat;
       }>();
+      if (leaf.getOptionValueSource('fileFormat') === 'cli' && raw.output === undefined)
+        throw new CliError({
+          code: 'CLI_BAD_ARGUMENT',
+          category: 'validation',
+          message: '--file-format requires --output.',
+          hint: 'Pass --output <path> or omit --file-format.',
+          retryable: false,
+          exitCode: 2,
+        });
       const stdinGlobals = leaf.optsWithGlobals<{ apiKeyStdin?: boolean }>();
       // 检查 stdin 用途冲突：--codes-stdin 和 --api-key-stdin 不能同时使用
       if (raw.codesStdin === true && stdinGlobals.apiKeyStdin === true)
@@ -256,20 +265,29 @@ export function registerRemoteCapabilityGroup(
         });
       // 读取文件中的代码
       const fileCodes =
-        raw.codesFile === undefined ? undefined : await readFile(raw.codesFile, 'utf8');
+        raw.codesFile === undefined
+          ? undefined
+          : await readFile(path.resolve(context.cwd ?? process.cwd(), raw.codesFile), 'utf8');
       // 读取标准输入的代码
       const stdinCodes =
         raw.codesStdin === true
-          ? await readStdin(process.stdin, { signal: context.signal, maxBytes: 1024 * 1024 })
+          ? await readStdin(context.stdin ?? process.stdin, {
+              signal: context.signal,
+              maxBytes: 1024 * 1024,
+            })
           : undefined;
       const schemaInput: Record<string, unknown> = { ...raw };
       delete schemaInput.codesFile;
       delete schemaInput.codesStdin;
       delete schemaInput.output;
+      delete schemaInput.fileFormat;
       // 合并所有来源的股票代码并去重
       const combinedCodes =
-        capability.id === 'valuation.snapshot'
-          ? rawCodes(raw.thscodes, fileCodes, stdinCodes)
+        capability.id.endsWith('-batch') ||
+        ['valuation.snapshot', 'special.anomaly-stock', 'special.auction-opportunities'].includes(
+          capability.id,
+        )
+          ? rawCodes(raw.thscodes, codeFileTokens(fileCodes), codeFileTokens(stdinCodes))
           : normalizedCodes(raw.thscodes, fileCodes, stdinCodes);
       if (combinedCodes !== undefined) schemaInput.thscodes = combinedCodes;
       const parsed = capability.inputSchema.safeParse(schemaInput);
@@ -293,7 +311,7 @@ export function registerRemoteCapabilityGroup(
       const explicitApiKey =
         globals.apiKeyStdin === true
           ? (
-              await readStdin(process.stdin, {
+              await readStdin(context.stdin ?? process.stdin, {
                 signal: context.signal,
                 maxBytes: 16 * 1024,
               })
@@ -310,11 +328,15 @@ export function registerRemoteCapabilityGroup(
           adjust: 'none' | 'forward' | 'backward';
         };
         const databasePath =
-          globals.db ?? process.env.HITHINK_FINANCE_DB_PATH ?? dependencies.defaultDbPath;
+          globals.db ??
+          (context.env ?? process.env).HITHINK_FINANCE_DB_PATH ??
+          dependencies.defaultDbPath;
         // 检查本地数据库是否存在
-        const exists = await stat(databasePath)
-          .then((value) => value.isFile())
-          .catch(() => false);
+        const exists =
+          requested !== 'remote' &&
+          (await stat(databasePath)
+            .then((value) => value.isFile())
+            .catch(() => false));
         let coversWindow = false;
         if (exists) {
           const opened = await openDatabase(databasePath);
@@ -346,15 +368,21 @@ export function registerRemoteCapabilityGroup(
               );
               const envelope = successEnvelope(capability.id, rows, {
                 source: 'local',
+                adjust: input.adjust,
                 requestId: context.requestId,
                 count: rows.length,
               });
               if (raw.output !== undefined) {
-                const outputPath = await writeOutputEnvelope(raw.output, envelope);
+                const outputPath = await writeDataFile(
+                  path.resolve(context.cwd ?? process.cwd(), raw.output),
+                  envelope,
+                  raw.fileFormat,
+                  context.signal,
+                );
                 await renderResult(
                   successEnvelope(
                     capability.id,
-                    { path: outputPath, format: 'json', count: rows.length },
+                    { path: outputPath, format: raw.fileFormat, count: rows.length },
                     {
                       source: 'local',
                       requestId: context.requestId,
@@ -418,14 +446,28 @@ export function registerRemoteCapabilityGroup(
           : undefined;
       const meta = {
         source: 'remote' as const,
+        ...(capability.id === 'market.history' ? { adjust: parsed.data.adjust as string } : {}),
         requestId: result.requestId ?? context.requestId,
         ...(count === undefined ? {} : { count }),
       };
       const envelope = successEnvelope(capability.id, result.data, meta);
       if (raw.output !== undefined) {
-        const outputPath = await writeOutputEnvelope(raw.output, envelope);
+        const outputPath = await writeDataFile(
+          path.resolve(context.cwd ?? process.cwd(), raw.output),
+          envelope,
+          raw.fileFormat,
+          context.signal,
+        );
         await renderResult(
-          successEnvelope(capability.id, { path: outputPath, format: 'json', count }, meta),
+          successEnvelope(
+            capability.id,
+            {
+              path: outputPath,
+              format: raw.fileFormat,
+              count: count ?? dataRows(result.data).length,
+            },
+            meta,
+          ),
           context,
         );
         return;

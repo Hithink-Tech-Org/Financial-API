@@ -22,6 +22,7 @@ ETF 成交价格选择快照或历史日线；基金净值进入净值与业绩�
 | --- | --- | --- |
 | [ETF 历史日线行情](get_fund_market_historical.md) | `get_fund_market_historical` | 公开 |
 | [基金行情快照](get_fund_market_snapshot.md) | `get_fund_market_snapshot` | 公开 |
+| [ETF批量历史日线行情](get_fund_market_historical_batch.md) | `get_fund_market_historical_batch` | 公开 |
 
 ## 财务报表与指标
 
@@ -86,15 +87,6 @@ ETF 成交价格选择快照或历史日线；基金净值进入净值与业绩�
 | --- | --- | --- |
 | [基金回测指标](get_fund_backtest_indicators.md) | `get_fund_backtest_indicators` | 公开 |
 | [基金在线回测](get_fund_backtest_result.md) | `get_fund_backtest_result` | 公开 |
-
-## 通用指标
-
-选择画线序列或表格，确认指标与选择器。
-
-| 需求 / 文档 | 接口或工具 | 使用范围 |
-| --- | --- | --- |
-| [基金画线指标](get_fund_indicators_line.md) | `get_fund_indicators_line` | 公开 |
-| [基金表格指标](get_fund_indicators_table.md) | `get_fund_indicators_table` | 公开 |
 
 ## QDII 额度
 

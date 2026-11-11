@@ -2,9 +2,9 @@
 
 ## 前置条件
 
-- 按需读取[本域入口](../SKILL.md)与[共享规则](../../hithink-finance-shared/SKILL.md)，同会话已加载内容可复用。
+- 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema fund.indicators-line --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- 远端调用需要 API Key，先按共享规则复用已有凭据。
+- 远端调用先用 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。
 - 每组 indexes 包含 thscodes 和 index_info；每个 index_info 元素包含 index_id。time_range 必须包含 time_type，绝对时间使用 Unix 毫秒。
 
 ## 命令
@@ -18,11 +18,12 @@ JSON 参数作为单个字符串传给 CLI，CLI 负责 URL 编码。示例适�
 
 ## 参数选择策略
 
-| 参数                  | 必填 | 说明                                                                                                          |
-| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------- |
-| `--indexes <json>`    | 是   | JSON array of groups: thscodes[], index_info[] with required index_id and optional attribute                  |
-| `--time-range <json>` | 是   | JSON object: required time_type; optional Unix-millisecond start/end and integer offset；上游参数: time_range |
-| `--output <path>`     | 否   | write the full JSON response envelope to a file                                                               |
+| 参数                     | 必填 | 说明                                                                                                          |
+| ------------------------ | ---- | ------------------------------------------------------------------------------------------------------------- |
+| `--indexes <json>`       | 是   | JSON array of groups: thscodes[], index_info[] with required index_id and optional attribute                  |
+| `--time-range <json>`    | 是   | JSON object: required time_type; optional Unix-millisecond start/end and integer offset；上游参数: time_range |
+| `--output <path>`        | 否   | write the response or data rows to a file                                                                     |
+| `--file-format <format>` | 否   | output file format (requires --output)；可选: json, ndjson, csv；默认: json                                   |
 
 ## 窗口与分页
 
@@ -32,7 +33,7 @@ JSON 参数作为单个字符串传给 CLI，CLI 负责 URL 编码。示例适�
 ## 常见错误
 
 - 参数校验失败时按 `error.hint` 修正，不要猜字段名。
-- 认证失败时不要重试刷屏；先处理 API Key。
+- 认证失败时先用 `auth status` 检查当前方式，再按 shared 的认证流程恢复。
 - 缺少嵌套字段时按错误中的 JSON 路径修正。指标 ID 与时间类型沿用已知契约或实际返回，不猜枚举。
 
 ## 批量操作说明

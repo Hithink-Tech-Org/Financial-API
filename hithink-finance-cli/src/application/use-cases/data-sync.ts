@@ -1,3 +1,4 @@
+import type { AuthSession } from '../ports/auth-provider.js';
 /**
  * 数据同步用例 — 从 Fuyao 远程仓库拉取并合并数据。
  *
@@ -78,7 +79,7 @@ export interface FuyaoSyncOptions {
   /** Fuyao dump API 的 base URL */
   baseUrl: string;
   /** 认证 API Key */
-  apiKey: string;
+  auth: AuthSession;
   /** 下载缓存目录 */
   cacheDir: string;
   /** 当前时间（可注入，用于测试） */

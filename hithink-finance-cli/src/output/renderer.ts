@@ -19,9 +19,17 @@
  * - 输出到 stderr
  */
 import type { CliContext, OutputFormat } from '../cli/context.js';
+import { once } from 'node:events';
 import type { Envelope } from '../contracts/envelope.js';
-import { externalize, renderJson } from './json.js';
+import { renderJson } from './json.js';
 import { renderTable } from './table.js';
+import { csvLines } from './records.js';
+import { renderDataView } from './data-view.js';
+import {
+  authenticationResult,
+  authenticationView,
+  chineseAuthenticationErrors,
+} from './authentication.js';
 
 /**
  * 根据 context 解析实际输出格式。
@@ -37,30 +45,6 @@ function resolvedFormat(context: CliContext): Exclude<OutputFormat, 'auto'> {
   }
   // 自动检测：交互式终端 → 表格，管道 → JSON
   return context.stdout.isTTY === true ? 'table' : 'json';
-}
-
-function csvEscape(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text =
-    typeof value === 'object' ? JSON.stringify(externalize(value)) : String(externalize(value));
-  return /[",\n\r]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
-function renderCsv(value: unknown): string {
-  const external = externalize(value);
-  const rows = Array.isArray(external) ? external : [external];
-  if (rows.length === 0) return '\n';
-  if (rows.every((row) => row !== null && typeof row === 'object' && !Array.isArray(row))) {
-    const headers = [
-      ...new Set(rows.flatMap((row) => Object.keys(row as Record<string, unknown>))),
-    ];
-    return `${headers.join(',')}\n${rows
-      .map((row) =>
-        headers.map((header) => csvEscape((row as Record<string, unknown>)[header])).join(','),
-      )
-      .join('\n')}\n`;
-  }
-  return `value\n${rows.map(csvEscape).join('\n')}\n`;
 }
 
 function red(value: string, enabled: boolean): string {
@@ -87,24 +71,47 @@ function terminalLink(label: string, url: string, enabled: boolean): string {
  * @param context - CLI 运行时上下文
  */
 export async function renderResult(result: Envelope, context: CliContext): Promise<void> {
+  if (result.ok && result.command.startsWith('auth.'))
+    result = { ...result, data: authenticationResult(result.data, context.debug) };
+  if (!result.ok && context.language === 'zh-CN') {
+    const translated = chineseAuthenticationErrors[result.error.code];
+    if (translated)
+      result = {
+        ...result,
+        error: { ...result.error, message: translated[0], hint: translated[1] },
+      };
+    else if (result.command.startsWith('auth') && result.error.code === 'UPSTREAM_NETWORK_FAILURE')
+      result = {
+        ...result,
+        error: {
+          ...result.error,
+          message: '登录验证暂时无法连接数据服务。',
+          hint: '检查网络或数据服务状态，然后重新运行 hithink-finance auth login。',
+        },
+      };
+  }
   // 成功结果输出到 stdout，错误输出到 stderr
   const stream = result.ok ? context.stdout : context.stderr;
   const format = resolvedFormat(context);
 
   // JSON / NDJSON 模式：统一序列化
   if (format === 'json' || format === 'ndjson') {
-    stream.write(renderJson(result));
+    stream.write(renderJson(result, format === 'json' && context.format === 'json'));
     return;
   }
 
   if (format === 'csv' && result.ok) {
-    stream.write(renderCsv(result.data));
+    for (const line of csvLines(result.data)) {
+      if (!stream.write(line)) await once(stream, 'drain', { signal: context.signal });
+    }
     return;
   }
 
   // 表格模式下的错误输出
   if (!result.ok) {
-    const errorLabel = red(`Error (${result.error.code})`, context.color);
+    const label =
+      context.language === 'zh-CN' && result.command.startsWith('auth') ? '错误' : 'Error';
+    const errorLabel = red(`${label} (${result.error.code})`, context.color);
     const lines = [
       `hithink-finance v${result.meta.cliVersion} — ${errorLabel}: ${result.error.message}`,
       result.error.hint,
@@ -123,5 +130,20 @@ export async function renderResult(result: Envelope, context: CliContext): Promi
   }
 
   // 表格模式下的成功输出
-  stream.write(renderTable(result.data));
+  if (
+    /^(symbol|market|index|financials|fund|futures|options|valuation|special|ipo|news|db)\./u.test(
+      result.command,
+    )
+  ) {
+    stream.write(renderDataView(result, context));
+    return;
+  }
+  stream.write(
+    renderTable(
+      context.language === 'zh-CN' && result.command.startsWith('auth')
+        ? authenticationView(result.data, context.debug)
+        : result.data,
+      context.stdout.columns,
+    ),
+  );
 }

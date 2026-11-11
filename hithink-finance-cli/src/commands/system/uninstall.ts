@@ -30,7 +30,7 @@ import { CliError } from '../../contracts/errors.js';
 import { removeSkills } from '../../infrastructure/skills/installer.js';
 import { uninstallGlobalPackage } from '../../infrastructure/updater/install.js';
 import type { PlatformPaths } from '../../infrastructure/filesystem/platform-paths.js';
-import type { ApiKeyAuthProvider } from '../../infrastructure/credentials/api-key-provider.js';
+import type { GlobalAuthProvider } from '../../infrastructure/credentials/global-provider.js';
 import { renderResult } from '../../output/renderer.js';
 
 /**
@@ -50,7 +50,7 @@ export function registerUninstallCommand(
   dependencies: {
     packageRoot: string;
     platformPaths: PlatformPaths;
-    authProvider: ApiKeyAuthProvider;
+    authProvider: GlobalAuthProvider;
   },
 ): void {
   const command = program
@@ -113,7 +113,7 @@ export function registerUninstallCommand(
         await rm(dependencies.platformPaths.configDir, { recursive: true, force: true });
 
       // ========== 步骤 5：清理凭据 ==========
-      if (options.purgeCredentials === true) await dependencies.authProvider.logoutAll();
+      if (options.purgeCredentials === true) await dependencies.authProvider.purge();
 
       // ========== 步骤 6：npm 卸载 ==========
       const npm =
