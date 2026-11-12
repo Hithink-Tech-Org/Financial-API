@@ -19,12 +19,12 @@ const aclScript = `
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $trusted = @($sid.Value, 'S-1-5-18', 'S-1-5-32-544')
-foreach ($p in (ConvertFrom-Json $env:HITHINK_AUTH_PERMISSION_PATHS)) {
+foreach ($p in $env:HITHINK_AUTH_PERMISSION_PATHS.Split([char]10)) {
   if ($env:HITHINK_AUTH_PERMISSION_CREATE -eq '1' -and -not [IO.Directory]::Exists($p)) {
-    $newAcl = New-Object System.Security.AccessControl.DirectorySecurity
+    $newAcl = [System.Security.AccessControl.DirectorySecurity]::new()
     $newAcl.SetAccessRuleProtection($true, $false)
     $newAcl.SetOwner($sid)
-    $newAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow')))
+    $newAcl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))
     [void][IO.Directory]::CreateDirectory($p, $newAcl)
   }
   $attributes = [IO.File]::GetAttributes($p)
@@ -33,9 +33,9 @@ foreach ($p in (ConvertFrom-Json $env:HITHINK_AUTH_PERMISSION_PATHS)) {
   $acl = if ($isDirectory) { [IO.Directory]::GetAccessControl($p) } else { [IO.File]::GetAccessControl($p) }
   if ($env:HITHINK_AUTH_PERMISSION_SET -eq '1') {
     $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRuleSpecific($rule) }
+    foreach ($rule in $acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])) { [void]$acl.RemoveAccessRuleSpecific($rule) }
     $inherit = if ($isDirectory) { 'ContainerInherit,ObjectInherit' } else { 'None' }
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl',$inherit,'None','Allow')
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl',$inherit,'None','Allow')
     $acl.AddAccessRule($rule)
     $acl.SetOwner($sid)
     if ($isDirectory) { [IO.Directory]::SetAccessControl($p, $acl) } else { [IO.File]::SetAccessControl($p, $acl) }
@@ -43,9 +43,9 @@ foreach ($p in (ConvertFrom-Json $env:HITHINK_AUTH_PERMISSION_PATHS)) {
   }
   if ($trusted -notcontains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) { throw 'untrusted owner' }
   $allowed = $false
-  foreach ($rule in $acl.Access) {
+  foreach ($rule in $acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])) {
     if ($rule.AccessControlType -ne 'Allow') { continue }
-    if ($trusted -notcontains $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value) { throw 'foreign permission' }
+    if ($trusted -notcontains $rule.IdentityReference.Value) { throw 'foreign permission' }
     $allowed = $true
   }
   if (-not $allowed) { throw 'missing private access' }
@@ -94,7 +94,9 @@ export async function privatePaths(
       }
     }
     // DACLs are established on creation/migration and audited explicitly; ordinary reads use lstat.
-    if (process.platform === 'win32' && (set || create || audit))
+    if (process.platform === 'win32' && paths.length > 0 && (set || create || audit)) {
+      // Windows paths cannot contain CR/LF; keep path data separate from PowerShell source.
+      if (paths.some((p) => /[\r\n]/u.test(p))) throw Error('Invalid Windows path.');
       await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', aclScript], {
         windowsHide: true,
         // Include cold PowerShell startup under contention within the login startup budget.
@@ -102,17 +104,20 @@ export async function privatePaths(
         maxBuffer: 4096,
         env: {
           ...process.env,
-          HITHINK_AUTH_PERMISSION_PATHS: JSON.stringify(paths),
+          HITHINK_AUTH_PERMISSION_PATHS: paths.join('\n'),
           HITHINK_AUTH_PERMISSION_SET: set ? '1' : '0',
           HITHINK_AUTH_PERMISSION_CREATE: create ? '1' : '0',
         },
       });
-  } catch {
-    throw authError(
+    }
+  } catch (cause) {
+    const failure = authError(
       'AUTH_STORAGE_PERMISSIONS',
       'Credential storage is unavailable or permits access by another user.',
       true,
     );
+    Object.defineProperty(failure, 'cause', { value: cause });
+    throw failure;
   }
 }
 
