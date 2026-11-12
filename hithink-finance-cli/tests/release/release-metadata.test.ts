@@ -20,7 +20,11 @@ test('declares public npm release metadata and an explicit license gate', async 
       pretest?: string;
     };
   };
-  expect(pkg.repository).toBeUndefined();
+  expect(pkg.repository).toEqual({
+    type: 'git',
+    url: 'git+https://github.com/Hithink-Tech-Org/Financial-API.git',
+    directory: 'hithink-finance-cli',
+  });
   expect(pkg.bugs).toBeUndefined();
   expect(pkg.homepage).toBe('https://fuyao.aicubes.cn/docs/');
   expect(pkg.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
