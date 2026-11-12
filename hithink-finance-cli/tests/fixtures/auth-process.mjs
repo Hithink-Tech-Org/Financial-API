@@ -12,7 +12,8 @@ const store = new GlobalCredentialStore(paths, keyring);
 if (command === 'hold') {
   await withAuthLock(paths, async () => {
     process.stdout.write('locked\n');
-    await new Promise(() => {});
+    // A pending Promise alone does not keep Node alive while the parent tests termination.
+    await new Promise((resolve) => setTimeout(resolve, 60000));
   });
 } else if (command === 'increment') {
   await store.transaction(async (state) => {

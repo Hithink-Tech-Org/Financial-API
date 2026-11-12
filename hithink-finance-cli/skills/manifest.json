@@ -1,6 +1,6 @@
 {
   "protocolVersion": "1",
-  "cliVersion": "0.2.1",
+  "cliVersion": "0.2.2",
   "files": {
     "hithink-finance-data/SKILL.md": "7d773d914a438bf5f1b83aa3207f374f16a4206420f5fa6af1fd0b5273d393ab",
     "hithink-finance-data/references/data-clean.md": "85b7ebdaab5e76d9d7449d68f68de6c5c5a3d31a624af3f54be1078d67690368",

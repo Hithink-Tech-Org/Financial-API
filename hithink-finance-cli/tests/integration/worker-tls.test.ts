@@ -16,7 +16,7 @@ test.skipIf(!openssl)(
   'relative CA files in different calling directories use their own TLS trust',
   async () => {
     const home = await mkdtemp(
-      path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'finance-ca-'),
+      path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'finance-ca-'),
     );
     const a = path.join(home, 'a'),
       b = path.join(home, 'b');

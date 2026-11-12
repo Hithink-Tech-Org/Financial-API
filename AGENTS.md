@@ -42,6 +42,7 @@ REST/Python/MCP 使用在 <https://fuyao.aicubes.cn/admin/> 获取的 API Key，
 - REST/Python 读取统一环境变量或用户级凭据文件；旧变量仅兼容。
 - MCP 优先使用 `${HITHINK_FINANCE_API_KEY}`，不继承环境时由 Agent 从统一来源配置客户端 Secret。
 
+
 ## 大数据纪律
 
 禁止把全市场、分页全集、多年或多标的原始结果输出到会话上下文。
