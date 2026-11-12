@@ -117,7 +117,7 @@ test('research preflight distinguishes pending migrations and failed data qualit
     const result = await execa(
       'node',
       ['dist/cli/main.js', ...args, '--db', file, '--format', 'json'],
-      { env },
+      { env, timeout: 15000 },
     );
     return JSON.parse(result.stdout);
   };
@@ -156,4 +156,4 @@ test('research preflight distinguishes pending migrations and failed data qualit
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 60000);

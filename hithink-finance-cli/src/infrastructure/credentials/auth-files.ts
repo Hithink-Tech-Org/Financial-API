@@ -97,7 +97,8 @@ export async function privatePaths(
     if (process.platform === 'win32' && (set || create || audit))
       await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', aclScript], {
         windowsHide: true,
-        timeout: 1800,
+        // Include cold PowerShell startup under contention within the login startup budget.
+        timeout: 5000,
         maxBuffer: 4096,
         env: {
           ...process.env,

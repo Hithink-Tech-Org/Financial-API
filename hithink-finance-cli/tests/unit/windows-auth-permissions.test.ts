@@ -7,7 +7,12 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { authPaths } from '../../src/infrastructure/credentials/auth-paths.js';
 import { GlobalCredentialStore } from '../../src/infrastructure/credentials/global-store.js';
 
-const fixture = vi.hoisted(() => ({ owner: '', extraPrincipal: '', modifyOnly: false }));
+const fixture = vi.hoisted(() => ({
+  owner: '',
+  extraPrincipal: '',
+  modifyOnly: false,
+  delayMs: 0,
+}));
 vi.mock('node:child_process', async (original) => {
   const actual = await original<typeof import('node:child_process')>();
   const execFile = ((command, args, options, callback) => {
@@ -18,7 +23,9 @@ vi.mock('node:child_process', async (original) => {
     ) {
       const marker =
         '  $acl = if ($isDirectory) { [IO.Directory]::GetAccessControl($p) } else { [IO.File]::GetAccessControl($p) }';
-      const script = String(args.at(-1));
+      const script =
+        (fixture.delayMs ? 'Start-Sleep -Milliseconds $env:TEST_AUTH_PERMISSION_DELAY_MS\n' : '') +
+        String(args.at(-1));
       if (!script.includes(marker)) throw Error('ACL fixture injection point changed.');
       args = [
         ...args.slice(0, -1),
@@ -48,6 +55,7 @@ vi.mock('node:child_process', async (original) => {
           TEST_AUTH_FILE_OWNER: fixture.owner,
           TEST_AUTH_EXTRA_PRINCIPAL: fixture.extraPrincipal,
           TEST_AUTH_MODIFY_ONLY: fixture.modifyOnly ? '1' : '0',
+          TEST_AUTH_PERMISSION_DELAY_MS: String(fixture.delayMs),
         },
       };
     }
@@ -61,6 +69,7 @@ afterEach(async () => {
   fixture.owner = '';
   fixture.extraPrincipal = '';
   fixture.modifyOnly = false;
+  fixture.delayMs = 0;
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
 });
 
@@ -69,6 +78,7 @@ test.skipIf(process.platform !== 'win32').each([
   { owner: 'S-1-5-32-544', extraPrincipal: 'S-1-5-18', modifyOnly: false },
   { owner: 'S-1-5-18', extraPrincipal: 'S-1-5-32-544', modifyOnly: false },
   { owner: '', extraPrincipal: '', modifyOnly: true },
+  { owner: '', extraPrincipal: '', modifyOnly: false, delayMs: 2000 },
 ])(
   'first login accepts normal Windows ACL variations: %j',
   async (scenario) => {
