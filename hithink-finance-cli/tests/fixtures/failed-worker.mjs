@@ -4,7 +4,10 @@ import { createServer } from 'node:net';
 import { appendFile } from 'node:fs/promises';
 import { identity, endpoint } from '../../dist/cli/worker/paths.js';
 import { withAuthLock } from '../../dist/infrastructure/credentials/auth-state-lock.js';
-import { writeAuthAtomic } from '../../dist/infrastructure/credentials/auth-files.js';
+import {
+  ensureAuthDirectory,
+  writeAuthAtomic,
+} from '../../dist/infrastructure/credentials/auth-files.js';
 import { authenticateServer, frames, next } from '../../dist/cli/worker/protocol.js';
 const paths = await identity(path.resolve(import.meta.dirname, '../..'));
 const record = {
@@ -30,6 +33,7 @@ const server = createServer((socket) => {
     server.close();
   });
 });
+await ensureAuthDirectory(paths.root);
 await new Promise((resolve) => server.listen(endpoint(paths, record.instance), resolve));
 await withAuthLock(paths, () => writeAuthAtomic(paths.document, record));
 console.log('ready');

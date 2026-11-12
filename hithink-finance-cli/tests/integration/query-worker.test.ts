@@ -332,10 +332,13 @@ test('loss of completion after submission never replays in the foreground', asyn
       timeout: 15000,
     });
     await new Promise<void>((resolve, reject) => {
+      let output = '';
       child.stdout!.on('data', (chunk) => {
-        if (chunk.toString().includes('ready')) resolve();
+        output += chunk.toString();
+        if (output.includes('ready')) resolve();
       });
       child.on('error', reject);
+      child.once('exit', (code) => reject(Error(`Fixture exited before readiness: ${code}`)));
     });
     const result = await cli(['--lang', 'en', ...snapshot]);
     expect(result.exitCode).toBe(5);
