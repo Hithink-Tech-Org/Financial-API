@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile, rm, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, readdir, writeFile, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -22,8 +22,8 @@ async function fixture(
     cli: (args: string[], cwd?: string, input?: string) => ReturnType<typeof execa>;
   }) => Promise<void>,
 ) {
-  const home = await mkdtemp(
-    path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'fin-qw-'),
+  const home = await realpath(
+    await mkdtemp(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'fin-qw-')),
   );
   const key = randomUUID();
   let allowedKey = key;

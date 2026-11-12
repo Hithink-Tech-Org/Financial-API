@@ -16,7 +16,7 @@ async function output(command: string, data: unknown, args: string[] = [], width
     { isTTY: true, columns: width },
   );
   await renderResult(successEnvelope(command, data, { requestId: 'test', source: 'remote' }), {
-    ...createCliContext(args),
+    ...createCliContext(['--lang', 'zh-CN', ...args]),
     stdout: stream as unknown as NodeJS.WriteStream,
   });
   return text;

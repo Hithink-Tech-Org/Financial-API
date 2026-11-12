@@ -3,10 +3,12 @@ on:
   pull_request:
     paths: ['hithink-finance-cli/**', '.github/workflows/hithink-finance-cli-ci.yml']
   push:
+    branches: ['**']
     paths: ['hithink-finance-cli/**', '.github/workflows/hithink-finance-cli-ci.yml']
 jobs:
   verify:
     strategy:
+      fail-fast: false
       matrix:
         target:
           - { os: windows-latest, arch: x64 }
