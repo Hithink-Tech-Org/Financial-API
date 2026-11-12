@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { deliveredOAuthConfig } from '../dist/infrastructure/credentials/oauth-client.js';
 
-export function connectorFiles(product, version, authorizationDomain) {
+export function connectorFiles(product, version, authorizationDomain, connectorVersion = version) {
   if (!product)
     throw Error('OAuth service configuration must be delivered before packaging a connector.');
   if (
@@ -11,8 +11,12 @@ export function connectorFiles(product, version, authorizationDomain) {
     !product.endpointOrigins.includes(`https://${authorizationDomain}`)
   )
     throw Error('Provide the approved authorization domain from the delivered configuration.');
-  if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/u.test(version))
-    throw Error('An exact release version is required.');
+  if (
+    ![version, connectorVersion].every((value) =>
+      /^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/u.test(value),
+    )
+  )
+    throw Error('Exact CLI and connector release versions are required.');
   const platforms = (command) =>
     Object.fromEntries(
       ['darwin', 'linux', 'win32'].map((platform) => [platform, command(platform)]),
@@ -30,7 +34,7 @@ export function connectorFiles(product, version, authorizationDomain) {
         'Query market data, financials and news; compare assets and export data for local SQL analysis.',
       source: 'hithink-finance',
       type: 'cli',
-      version,
+      version: connectorVersion,
       minWorkbuddyVersion: '4.24.0',
       examples_zh: [
         '查询贵州茅台（600519.SH）的最新行情，列出价格、涨跌幅和数据时间。',
@@ -48,16 +52,17 @@ export function connectorFiles(product, version, authorizationDomain) {
       ],
     },
     'cli.json': {
-      runtime: { type: 'node', version: '24' },
+      runtime: { type: 'node', version: '22' },
       npmRegistries: ['https://registry.npmmirror.com', 'https://registry.npmjs.org'],
       init: platforms(() => 'npm install -g @hithink-tech/hithink-finance-cli@latest'),
       versionCheck: {
         command: platforms((p) => `hithink-finance${p === 'win32' ? '.cmd' : ''} --version`),
         minVersion: version,
       },
+      authWaitForExit: true,
       auth: platforms(
         (p) =>
-          `hithink-finance${p === 'win32' ? '.cmd' : ''} auth login --method oauth --background --no-browser`,
+          `hithink-finance${p === 'win32' ? '.cmd' : ''} auth login --method oauth --no-browser`,
       ),
       status: platforms(
         (p) => `hithink-finance${p === 'win32' ? '.cmd' : ''} auth status --format json`,
@@ -72,14 +77,14 @@ export function connectorFiles(product, version, authorizationDomain) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [destination, domain] = process.argv.slice(2);
+  const [destination, domain, connectorVersion] = process.argv.slice(2);
   if (!destination)
     throw Error(
-      'Usage: node scripts/package-workbuddy.mjs <new-output-directory> <approved-auth-domain>',
+      'Usage: node scripts/package-workbuddy.mjs <new-output-directory> <approved-auth-domain> [connector-version]',
     );
   const root = fileURLToPath(new URL('../', import.meta.url));
   const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-  const files = connectorFiles(deliveredOAuthConfig(), version, domain);
+  const files = connectorFiles(deliveredOAuthConfig(), version, domain, connectorVersion);
   await mkdir(destination);
   for (const [name, value] of Object.entries(files))
     await writeFile(path.join(destination, name), JSON.stringify(value, null, 2) + '\n');

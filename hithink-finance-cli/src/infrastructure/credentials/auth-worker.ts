@@ -6,6 +6,7 @@ import { listenForCallback } from './loopback-callback.js';
 import type { GlobalAuthProvider } from './global-provider.js';
 import { authError } from './auth-paths.js';
 import type { Language } from '../../cli/i18n.js';
+import { createProcessShutdown } from '../process/shutdown.js';
 
 export type AuthPhase = 'waiting' | 'exchanging' | 'validating' | 'saving';
 export async function runAuthWorker(
@@ -94,32 +95,50 @@ export async function runAuthWorker(
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const abort = new AbortController();
+  const shutdown = createProcessShutdown();
+  const signal = AbortSignal.any([abort.signal, shutdown.signal]);
   let started = false;
+  let background = false;
   const lifetime = setTimeout(() => {
     abort.abort();
     process.exitCode = 3;
   }, 300000);
+  const cancel = () => {
+    abort.abort();
+    if (!started) {
+      clearTimeout(lifetime);
+      shutdown.dispose();
+      process.exitCode = 3;
+      if (process.connected) process.disconnect();
+    }
+  };
+  shutdown.signal.addEventListener('abort', cancel, { once: true });
+  const disconnected = () => {
+    // Background mode intentionally detaches; a foreground owner disappearing is cancellation.
+    if (!background) cancel();
+  };
+  process.once('disconnect', disconnected);
   const send = (message: object) => {
-    // The host may terminate the foreground process immediately after receiving the URL.
     if (process.connected) process.send?.(message, () => undefined);
   };
   process.on('message', (message: unknown) => {
     if (!message || typeof message !== 'object') return;
     if ('type' in message && message.type === 'cancel') {
-      abort.abort();
+      cancel();
       return;
     }
     if (started || !('id' in message) || typeof message.id !== 'string') return;
     started = true;
+    background = 'background' in message && message.background === true;
     void (async () => {
       const provider = createGlobalAuthProvider('https://fuyao.aicubes.cn');
       let intent: number | undefined;
       let workerOwnsCleanup = false;
       try {
         const client = new OAuthClient();
+        if (signal.aborted) throw authError('AUTH_LOGIN_CANCELLED', 'Authorization was cancelled.');
         intent = await provider.beginIntent(String(message.id));
-        if (abort.signal.aborted)
-          throw authError('AUTH_LOGIN_CANCELLED', 'Authorization was cancelled.');
+        if (signal.aborted) throw authError('AUTH_LOGIN_CANCELLED', 'Authorization was cancelled.');
         workerOwnsCleanup = true;
         await runAuthWorker(
           provider,
@@ -127,7 +146,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
           intent,
           String(message.id),
           (url) => send({ type: 'ready', url }),
-          abort.signal,
+          signal,
           {
             language: 'language' in message && message.language === 'en' ? 'en' : 'zh-CN',
             progress: (phase) => send({ type: 'progress', phase }),
@@ -144,6 +163,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         process.exitCode = 3;
       } finally {
         clearTimeout(lifetime);
+        shutdown.signal.removeEventListener('abort', cancel);
+        shutdown.dispose();
+        process.removeListener('disconnect', disconnected);
         if (process.connected) process.disconnect();
       }
     })();

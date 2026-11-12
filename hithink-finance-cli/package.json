@@ -1,6 +1,6 @@
 {
   "name": "@hithink-tech/hithink-finance-cli",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "hithink finance CLI for humans, automation, and AI agents",
   "type": "module",
   "bin": {

@@ -65,7 +65,7 @@ hithink-finance auth login --method api-key --api-key-stdin
 hithink-finance auth use api-key
 ```
 
-OAuth 默认连接生产认证服务，使用 `auth login --method oauth` 打开浏览器授权，数据服务验证新凭据可用后保存并启用。`--background --no-browser` 在回调 worker 就绪后输出独立 HTTPS URL，供宿主打开。OAuth 到期后续期；无法安全续期时提示重新登录。
+OAuth 默认连接生产认证服务，使用 `auth login --method oauth` 打开浏览器授权，数据服务验证新凭据可用后保存并启用。`--no-browser` 输出独立 HTTPS URL，供宿主打开，命令等待授权完成后返回；`--background --no-browser` 在回调 worker 就绪后返回，后台继续授权。前台取消或父进程断开时终止本次授权并清理监听和 pending；后台模式允许父进程主动断开。强制终止后的失活 pending 在下一次登录时恢复。OAuth 到期后续期；无法安全续期时提示重新登录。
 
 网页授权完成后若数据服务不可达，登录会报告凭据验证阶段的网络错误；恢复数据服务连接后重新登录。
 
@@ -81,7 +81,7 @@ OAuth 默认连接生产认证服务，使用 `auth login --method oauth` 打开
 
 `auth status` 在已连接时退出 0，未连接时退出 3；两种状态均在 stdout 返回 `ok=true` 的状态信封，通过 `data.connected` 读取连接状态。该命令只读持久化凭据，不联网、不刷新或写入凭据。
 
-WorkBuddy 连接器使用 Node 24 托管运行时，通过 `npmRegistries` 优先使用国内镜像 `https://registry.npmmirror.com`，失败时回退到官方源 `https://registry.npmjs.org`，安装 CLI 的 `latest` 版本，并通过 `versionCheck` 检查最低版本。登录使用 `auth login --method oauth --background --no-browser`，在后台回调任务就绪后输出授权 URL；宿主打开浏览器并轮询 `auth status --format json`。取消连接调用 `auth logout --all --format json`。连接器配置由 `scripts/package-workbuddy.mjs` 生成，最低 WorkBuddy 版本为 4.24.0。
+WorkBuddy 连接器使用 Node 22 托管运行时（最低 22.13.0）以兼容 macOS 13.4 等系统，通过 `npmRegistries` 优先使用国内镜像 `https://registry.npmmirror.com`，失败时回退到官方源 `https://registry.npmjs.org`，安装 CLI 的 `latest` 版本，并通过 `versionCheck` 检查最低版本。登录使用 `auth login --method oauth --no-browser`，并设置 `authWaitForExit: true`：回调监听就绪后输出授权 URL，宿主打开浏览器并等待 CLI 完成授权、验证及凭据保存，再检查 `auth status --format json`。取消连接调用 `auth logout --all --format json`。连接器配置由 `scripts/package-workbuddy.mjs` 生成，最低 WorkBuddy 版本为 4.24.0。
 
 ## 能力发现
 

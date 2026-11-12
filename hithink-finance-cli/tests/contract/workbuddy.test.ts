@@ -14,7 +14,7 @@ test('connector requires delivered configuration and uses one shared CLI with te
     name_en: 'HiThink Finance CLI',
     type: 'cli',
   });
-  expect(files['cli.json'].runtime).toEqual({ type: 'node', version: '24' });
+  expect(files['cli.json'].runtime).toEqual({ type: 'node', version: '22' });
   expect(files['cli.json'].npmRegistries).toEqual([
     'https://registry.npmmirror.com',
     'https://registry.npmjs.org',
@@ -35,7 +35,11 @@ test('connector requires delivered configuration and uses one shared CLI with te
   const matcher = new RegExp(files['cli.json'].statusMatch);
   expect(matcher.test('{"data":{"connected":true}}')).toBe(true);
   expect(matcher.test('{"data":{"connected":false,"pending":true}}')).toBe(false);
-  expect(files['cli.json'].auth.win32).toContain('--method oauth --background --no-browser');
+  expect(files['cli.json'].authWaitForExit).toBe(true);
+  for (const command of Object.values(files['cli.json'].auth)) {
+    expect(command).toContain('--method oauth --no-browser');
+    expect(command).not.toContain('--background');
+  }
   expect(() =>
     connectorFiles(
       { endpointOrigins: ['https://auth.example.test'] },
@@ -43,4 +47,15 @@ test('connector requires delivered configuration and uses one shared CLI with te
       'evil.example.test',
     ),
   ).toThrow();
+});
+
+test('connector metadata version can advance independently of its minimum CLI version', () => {
+  const files = connectorFiles(
+    { endpointOrigins: ['https://auth.example.test'] },
+    '0.2.4',
+    'auth.example.test',
+    '0.2.5',
+  );
+  expect(files['connector-meta.json'].version).toBe('0.2.5');
+  expect(files['cli.json'].versionCheck.minVersion).toBe('0.2.4');
 });

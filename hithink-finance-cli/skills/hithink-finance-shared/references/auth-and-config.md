@@ -18,7 +18,7 @@ hithink-finance config show --format json
 ```
 
 - 用户选择 API Key 时，在 https://fuyao.aicubes.cn/admin/ 获取。交互隐藏输入使用 `auth login --method api-key`。新 Key 远端验证成功后才保存；`--replace` 继续接受。
-- OAuth 登录默认连接生产认证服务。宿主使用 `auth login --method oauth --background --no-browser`，就绪后输出裸 HTTPS URL，再轮询本地 status。
+- OAuth 登录默认连接生产认证服务。WorkBuddy 使用 `auth login --method oauth --no-browser` 配合 `authWaitForExit: true`，就绪后输出裸 HTTPS URL，宿主打开浏览器，等待 CLI 完成授权、验证及保存后检查 status。前台取消或父进程断开时清理本次授权；需要就绪即返回的其他调用方可使用 `--background`，后台任务允许父进程主动断开。
 - `auth status` 展示连接状态、当前方式及可用凭据；`--debug` 提供附加诊断。状态检查不联网、不导入环境变量、不创建文件或刷新令牌。`connected` 表示本地存在可使用或可安全续期的当前凭据，不代表实时远端验权。
 - 业务命令显式 `--api-key-stdin` 仅覆盖本次请求，不要求持久存储可用。隐藏的兼容 `--api-key <value>` 会发出弃用警告。
 - `HITHINK_FINANCE_API_KEY` 仅在首次初始化且没有已存旧 Key 时导入一次；后续改变环境变量或退出均不自动导入。需要更新时使用登录命令。

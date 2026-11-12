@@ -1,4 +1,4 @@
-import { spawn, execFile } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { OAuthClient } from './oauth-client.js';
@@ -6,6 +6,29 @@ import { authError } from './auth-paths.js';
 import { CliError } from '../../contracts/errors.js';
 import type { Language } from '../../cli/i18n.js';
 import type { AuthPhase } from './auth-worker.js';
+
+// Leave time for intent-scoped cleanup before the host's process-tree kill escalates.
+const workerCleanupMs = 1500;
+async function stopAuthWorker(child: ChildProcess): Promise<void> {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      child.removeListener('exit', done);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      done();
+    }, workerCleanupMs);
+    child.once('exit', done);
+    if (child.connected) {
+      child.send({ type: 'cancel' }, (error: Error | null) => {
+        if (error) child.kill('SIGTERM');
+      });
+    } else child.kill('SIGTERM');
+  });
+}
 
 export async function startOAuthLogin(options: {
   background?: boolean;
@@ -31,12 +54,12 @@ export async function startOAuthLogin(options: {
   );
   let ready = false;
   let terminal = false;
+  let removeAbortListener: (() => void) | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
         () => {
           terminal = true;
-          child.kill();
           reject(
             authError(
               'AUTH_WORKER_TIMEOUT',
@@ -49,10 +72,10 @@ export async function startOAuthLogin(options: {
       const cancel = () => {
         terminal = true;
         clearTimeout(timeout);
-        if (child.connected) child.send?.({ type: 'cancel' });
         reject(authError('AUTH_LOGIN_CANCELLED', 'Authorization was cancelled.'));
       };
       options.signal?.addEventListener('abort', cancel, { once: true });
+      removeAbortListener = () => options.signal?.removeEventListener('abort', cancel);
       child.once('error', () => {
         terminal = true;
         clearTimeout(timeout);
@@ -145,11 +168,17 @@ export async function startOAuthLogin(options: {
           }
         },
       );
-      child.send?.({ id, language: options.language ?? 'zh-CN' });
+      child.send?.({
+        id,
+        language: options.language ?? 'zh-CN',
+        background: options.background === true,
+      });
     });
   } catch (error) {
     terminal = true;
-    child.kill();
+    await stopAuthWorker(child);
     throw error;
+  } finally {
+    removeAbortListener?.();
   }
 }

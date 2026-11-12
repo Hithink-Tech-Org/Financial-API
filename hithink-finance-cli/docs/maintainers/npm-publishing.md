@@ -11,6 +11,6 @@ Releases use the public repository's `hithink-finance-cli-release.yml` workflow 
 
 The publish job runs `npm run verify` and `node scripts/check-license.mjs` once before packing and publishing. It uses `npm publish --ignore-scripts` to avoid repeating the complete verification through `prepublishOnly`. Local manual publishing retains the `prepublishOnly` safeguard.
 
-For WorkBuddy, generate the connector with `node scripts/package-workbuddy.mjs <new-output-directory> <approved-auth-domain>` after building. The CLI version must already be published before submitting the connector. Test installation, browser authorization, status, logout, restart and expired credentials in the real host on supported platforms.
+For WorkBuddy, generate the connector with `node scripts/package-workbuddy.mjs <new-output-directory> <approved-auth-domain> [connector-version]` after building. The optional connector version defaults to the CLI version; the minimum CLI version always comes from package.json. The required CLI version must already be published before submitting the connector. The generated auth command uses foreground completion with `authWaitForExit: true`; WorkBuddy opens the printed URL and waits for the result. Test installation, browser authorization, cancellation, status, logout, restart and expired credentials in the real host on supported platforms.
 
 The connector icon is `assets/workbuddy/icon.png`, copied unchanged from the frontend project's `apps/docs/static/img/favicon.png`. Refresh this asset from the official frontend icon when branding changes.
