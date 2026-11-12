@@ -72,6 +72,8 @@ CLI 优先使用具体命令的 `--output`、`db export` 或 `market panel --out
 
 ## 验证
 
+发布前固定一个候选版本，检查失败时修复同一候选，不因 CI 失败自动递增版本号；验证通过后再创建发布 tag。先核对 npm 与 GitHub Release 的实际发布状态，已发布版本不可覆盖。替换已推送但未发布的候选 tag，须获得用户对远端历史修改的明确授权；用户明确批准的例外仅适用于当次发布。
+
 ```bash
 python scripts/sync_skill_contracts.py --check
 python -m pytest python/tests/
