@@ -23,7 +23,7 @@ async function fixture(
   }) => Promise<void>,
 ) {
   const home = await mkdtemp(
-    path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'finance-query-worker-'),
+    path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'fin-qw-'),
   );
   const key = randomUUID();
   let allowedKey = key;
