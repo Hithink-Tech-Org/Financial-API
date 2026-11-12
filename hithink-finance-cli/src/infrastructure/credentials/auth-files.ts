@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { constants } from 'node:fs';
 import { promisify } from 'node:util';
 import { chmod, lstat, mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -17,6 +18,7 @@ export function fileCode(error: unknown): string | undefined {
 const aclScript = `
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$trusted = @($sid.Value, 'S-1-5-18', 'S-1-5-32-544')
 foreach ($p in (ConvertFrom-Json $env:HITHINK_AUTH_PERMISSION_PATHS)) {
   if ($env:HITHINK_AUTH_PERMISSION_CREATE -eq '1' -and -not [IO.Directory]::Exists($p)) {
     $newAcl = New-Object System.Security.AccessControl.DirectorySecurity
@@ -39,12 +41,12 @@ foreach ($p in (ConvertFrom-Json $env:HITHINK_AUTH_PERMISSION_PATHS)) {
     if ($isDirectory) { [IO.Directory]::SetAccessControl($p, $acl) } else { [IO.File]::SetAccessControl($p, $acl) }
     $acl = if ($isDirectory) { [IO.Directory]::GetAccessControl($p) } else { [IO.File]::GetAccessControl($p) }
   }
-  if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'owner mismatch' }
-  if ($isDirectory -and -not $acl.AreAccessRulesProtected) { throw 'inherited permissions' }
+  if ($trusted -notcontains $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value) { throw 'untrusted owner' }
   $allowed = $false
   foreach ($rule in $acl.Access) {
-    if ($rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { throw 'foreign permission' }
-    if ($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) { $allowed = $true }
+    if ($rule.AccessControlType -ne 'Allow') { continue }
+    if ($trusted -notcontains $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value) { throw 'foreign permission' }
+    $allowed = $true
   }
   if (-not $allowed) { throw 'missing private access' }
 }`;
@@ -61,9 +63,34 @@ export async function privatePaths(
       const info = await lstat(p);
       if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) throw Error();
       if (process.platform !== 'win32') {
-        if (info.uid !== process.getuid?.()) throw Error();
-        if (set) await chmod(p, info.isDirectory() ? 0o700 : 0o600);
-        else if ((info.mode & 0o077) !== 0) throw Error();
+        const uid = process.getuid?.();
+        if (info.uid !== uid && info.uid !== 0 && uid !== 0) throw Error();
+        if (set) {
+          if (uid === 0) {
+            const handle = await open(
+              p,
+              constants.O_RDONLY |
+                constants.O_NOFOLLOW |
+                (info.isDirectory() ? constants.O_DIRECTORY : 0),
+            );
+            try {
+              const opened = await handle.stat();
+              if (
+                opened.ino !== info.ino ||
+                opened.dev !== info.dev ||
+                (!info.isDirectory() && opened.nlink !== 1)
+              )
+                throw Error();
+              await handle.chmod(info.isDirectory() ? 0o700 : 0o600);
+              const parent = await lstat(path.dirname(p));
+              if (parent.isSymbolicLink() || !parent.isDirectory()) throw Error();
+              // Keep root-created state usable by the owner of a mounted user directory.
+              if (opened.uid === 0 && parent.uid !== 0) await handle.chown(parent.uid, parent.gid);
+            } finally {
+              await handle.close();
+            }
+          } else await chmod(p, info.isDirectory() ? 0o700 : 0o600);
+        } else if ((info.mode & (info.isDirectory() ? 0o022 : 0o077)) !== 0) throw Error();
       }
     }
     // DACLs are established on creation/migration and audited explicitly; ordinary reads use lstat.
@@ -82,7 +109,7 @@ export async function privatePaths(
   } catch {
     throw authError(
       'AUTH_STORAGE_PERMISSIONS',
-      'Credential storage must be private and owned by the current user.',
+      'Credential storage is unavailable or permits access by another user.',
       true,
     );
   }

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execa } from 'execa';
 import { expect, test } from 'vitest';
+import { packageVersion } from '../fixtures/package-version.js';
 import { createPlatformPaths } from '../../src/infrastructure/filesystem/platform-paths.js';
 
 test('doctor reports actionable local diagnostics without exposing credentials', async () => {
@@ -39,7 +40,7 @@ test('doctor reports actionable local diagnostics without exposing credentials',
       ok: true,
       command: 'doctor',
       data: {
-        runtime: { package_version: '0.2.0', node_version: expect.any(String) },
+        runtime: { package_version: packageVersion, node_version: expect.any(String) },
         config: { profile: 'default', database: { exists: false } },
         authentication: { configured: false, source: 'oauth' },
         data_lock: { present: true, pid: process.pid, command: 'data.sync' },

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execa } from 'execa';
 import { expect, test } from 'vitest';
+import { packageVersion } from '../fixtures/package-version.js';
 
 async function runUpdate(args: string[], latestVersion = '0.2.0') {
   const root = await mkdtemp(path.join(tmpdir(), 'hithink-update-'));
@@ -73,9 +74,11 @@ test('update repair reinstalls the current package version', async () => {
   expect(JSON.parse(result.stdout)).toMatchObject({
     ok: true,
     command: 'update',
-    data: { version: '0.2.0', repaired: true },
+    data: { version: packageVersion, repaired: true },
   });
-  expect(await readFile(log, 'utf8')).toContain('@hithink-tech/hithink-finance-cli@0.2.0');
+  expect(await readFile(log, 'utf8')).toContain(
+    `@hithink-tech/hithink-finance-cli@${packageVersion}`,
+  );
 });
 
 test('update target-version installs the requested package version', async () => {

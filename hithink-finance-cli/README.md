@@ -75,13 +75,13 @@ OAuth 默认连接生产认证服务，使用 `auth login --method oauth` 打开
 
 旧格式凭据通过 `auth migrate` 一次性迁入共享文件。迁移保留已保存凭据和当前启用方式；旧登录、刷新或清理任务结束后才可迁移。迁移失败时保留原文件，恢复来源后可重试。
 
-凭据位于操作系统用户主目录下的 `.hithink-finance/auth/production/`，与配置、数据和 npm 安装目录分开。统一使用操作系统私有权限保护的明文文件；系统凭据库适配器仅用于旧凭据的一次性迁入。POSIX 使用私有目录和文件权限，Windows 创建或迁移时收紧 ACL，`doctor` 可显式检查。日常读取不反复启动权限子进程。`auth status` 只读本地状态，`connected` 不代表即时远端验权。认证目录需位于可靠本地文件系统。
+凭据位于操作系统用户主目录下的 `.hithink-finance/auth/production/`，与配置、数据和 npm 安装目录分开。统一使用操作系统私有权限保护的明文文件；系统凭据库适配器仅用于旧凭据的一次性迁入。macOS/Linux 保持凭据文件私有、目录不可由其他用户写入，兼容合法 root 场景；root 在用户目录中创建状态后保留该用户的访问能力。Windows 兼容当前用户、系统服务与管理员的权限及安全继承，按实际读写权限运行；`doctor` 可显式检查。日常读取不反复启动权限子进程。`auth status` 只读本地状态，`connected` 不代表即时远端验权。认证目录需位于可靠本地文件系统。
 
 `auth logout` 清当前方式，`--all` 清两类凭据；随后尽力撤销 OAuth，失败时明确报告本地退出已完成、远端撤销未确认。已有签名下载链接按自身有效期失效。`uninstall --purge-credentials` 清理认证秘密；普通数据或配置清理保持其各自范围。
 
 `auth status` 在已连接时退出 0，未连接时退出 3；两种状态均在 stdout 返回 `ok=true` 的状态信封，通过 `data.connected` 读取连接状态。该命令只读持久化凭据，不联网、不刷新或写入凭据。
 
-WorkBuddy 连接器使用 Node 24 托管运行时，安装指定 CLI 版本，并通过 `versionCheck` 检查最低版本。登录使用 `auth login --method oauth --background --no-browser`，在后台回调任务就绪后输出授权 URL；宿主打开浏览器并轮询 `auth status --format json`。取消连接调用 `auth logout --all --format json`。连接器配置由 `scripts/package-workbuddy.mjs` 生成，最低 WorkBuddy 版本为 4.24.0。
+WorkBuddy 连接器使用 Node 24 托管运行时，通过 `npmRegistries` 优先使用国内镜像 `https://registry.npmmirror.com`，失败时回退到官方源 `https://registry.npmjs.org`，安装 CLI 的 `latest` 版本，并通过 `versionCheck` 检查最低版本。登录使用 `auth login --method oauth --background --no-browser`，在后台回调任务就绪后输出授权 URL；宿主打开浏览器并轮询 `auth status --format json`。取消连接调用 `auth logout --all --format json`。连接器配置由 `scripts/package-workbuddy.mjs` 生成，最低 WorkBuddy 版本为 4.24.0。
 
 ## 能力发现
 

@@ -58,3 +58,23 @@ test('resource connectivity failure identifies the post-authorization stage', as
   child.emit('message', { type: 'failure', code: 'UPSTREAM_NETWORK_FAILURE' });
   await checked;
 });
+
+test.each(['AUTH_STORAGE_PERMISSIONS', 'AUTH_STORAGE_BUSY', 'AUTH_HOME_UNAVAILABLE'])(
+  'background failure preserves the local storage classification: %s',
+  async (code) => {
+    const child = Object.assign(new EventEmitter(), {
+      kill: vi.fn(),
+      send: vi.fn(),
+      connected: true,
+    });
+    mocks.spawn.mockReturnValue(child);
+    const execution = startOAuthLogin({ background: true, noBrowser: true, output: vi.fn() });
+    const checked = expect(execution).rejects.toMatchObject({
+      code,
+      category: 'local-data',
+      exitCode: 5,
+    });
+    child.emit('message', { type: 'failure', code });
+    await checked;
+  },
+);

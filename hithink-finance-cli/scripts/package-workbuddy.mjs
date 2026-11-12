@@ -49,8 +49,8 @@ export function connectorFiles(product, version, authorizationDomain) {
     },
     'cli.json': {
       runtime: { type: 'node', version: '24' },
-      npmRegistry: 'https://registry.npmjs.org',
-      init: platforms(() => `npm install -g @hithink-tech/hithink-finance-cli@${version}`),
+      npmRegistries: ['https://registry.npmmirror.com', 'https://registry.npmjs.org'],
+      init: platforms(() => 'npm install -g @hithink-tech/hithink-finance-cli@latest'),
       versionCheck: {
         command: platforms((p) => `hithink-finance${p === 'win32' ? '.cmd' : ''} --version`),
         minVersion: version,

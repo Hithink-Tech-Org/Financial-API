@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { expect, test } from 'vitest';
+import { packageVersion } from '../fixtures/package-version.js';
 
 test('writes invalid-command JSON only to stderr and exits with code 2', async () => {
   const result = await execa('node', ['dist/cli/main.js', 'does-not-exist', '--format', 'json'], {
@@ -17,7 +18,7 @@ test('writes invalid-command JSON only to stderr and exits with code 2', async (
       retryable: false,
     },
     meta: {
-      cli_version: '0.2.0',
+      cli_version: packageVersion,
       schema_version: '1',
     },
   });

@@ -25,7 +25,7 @@ hithink-finance config show --format json
 - 普通业务首次初始化自动迁移旧 default Key 或唯一条目。OAuth 登录初始化不探测旧系统凭据库；其后需要导入旧 Key，或遇多候选/旧非默认 profile，使用 `auth migrate --legacy-profile <name>` 一次性选择，再移除旧 profile 设置。
 - `auth status` 已连接时退出 0，未连接时退出 3；stdout 保留 `ok=true` 状态信封，读取 `data.connected`。状态检查只读本地凭据。
 - OAuth 失败保持当前选择。权限错误不刷新；刷新结果未知时不重复发送旧 RT，仍有效 AT 可继续使用，到期后重新登录。
-- 凭据根使用 OS 用户主目录 `.hithink-finance/auth/production/`，与 npm 安装及数据配置路径独立。统一采用操作系统私有权限保护的明文凭据文件。存储诊断使用 `auth status --debug --format json`。
+- 凭据根使用 OS 用户主目录 `.hithink-finance/auth/production/`，与 npm 安装及数据配置路径独立。统一采用操作系统私有权限保护的明文凭据文件。macOS/Linux 兼容合法 root 和可搜索目录，管理员写入用户目录后保留普通用户的访问能力。Windows 兼容合法的系统、管理员和继承权限；后台登录的存储故障保留本地存储错误分类。存储诊断使用 `auth status --debug --format json`。
 - `logout` 清当前凭据，`--all` 清两类凭据。OAuth 本地退出先提交，远端撤销失败会明确报告；已签名下载链接按自身期限失效。
 - Agent 从用户级 `credentials.env` 读取 Key 时，通过 stdin 显式登录或仅用于本次请求。不要把 Key、Token、授权码或完整授权 URL 写入日志、Markdown、Git 或对话。
 - 共享安装副本须升级到支持全局格式的版本。认证目录需位于可靠本地文件系统。

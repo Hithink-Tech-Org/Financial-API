@@ -15,7 +15,15 @@ test('connector requires delivered configuration and uses one shared CLI with te
     type: 'cli',
   });
   expect(files['cli.json'].runtime).toEqual({ type: 'node', version: '24' });
-  expect(files['cli.json'].npmRegistry).toBe('https://registry.npmjs.org');
+  expect(files['cli.json'].npmRegistries).toEqual([
+    'https://registry.npmmirror.com',
+    'https://registry.npmjs.org',
+  ]);
+  expect(files['cli.json'].init).toEqual({
+    darwin: 'npm install -g @hithink-tech/hithink-finance-cli@latest',
+    linux: 'npm install -g @hithink-tech/hithink-finance-cli@latest',
+    win32: 'npm install -g @hithink-tech/hithink-finance-cli@latest',
+  });
   expect(files['cli.json'].versionCheck).toEqual({
     command: {
       darwin: 'hithink-finance --version',

@@ -92,7 +92,13 @@ export class GlobalCredentialStore {
     let document: unknown;
     try {
       document = JSON.parse(await readFile(this.paths.document, 'utf8'));
-    } catch {
+    } catch (error) {
+      if (['EACCES', 'EPERM'].includes(fileCode(error) ?? ''))
+        throw authError(
+          'AUTH_STORAGE_PERMISSIONS',
+          'Credential storage cannot be read by the current user.',
+          true,
+        );
       throw authError('AUTH_STORAGE_CORRUPT', 'Cannot parse credential state.', true);
     }
     if (

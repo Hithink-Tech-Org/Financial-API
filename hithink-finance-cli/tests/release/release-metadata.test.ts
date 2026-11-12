@@ -23,7 +23,7 @@ test('declares public npm release metadata and an explicit license gate', async 
   expect(pkg.repository).toBeUndefined();
   expect(pkg.bugs).toBeUndefined();
   expect(pkg.homepage).toBe('https://fuyao.aicubes.cn/docs/');
-  expect(pkg.version).toBe('0.2.0');
+  expect(pkg.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
   expect(pkg.dependencies.skills).toBeUndefined();
   expect(pkg.bin).toEqual({ 'hithink-finance': './dist/cli/main.js' });
   expect(pkg.engines.node).toBe('^22.13.0 || >=24.0.0');
@@ -39,10 +39,8 @@ test('declares public npm release metadata and an explicit license gate', async 
   await expect(access('SECURITY.md')).resolves.toBeUndefined();
   await expect(access('docs/maintainers/npm-publishing.md')).resolves.toBeUndefined();
   const publishing = await readFile('docs/maintainers/npm-publishing.md', 'utf8');
-  expect(publishing).toContain(
-    'npm publish --access public --tag latest --registry=https://registry.npmjs.org',
-  );
-  expect(publishing).toContain('interactive 2FA');
+  expect(publishing).toContain('hithink-finance-cli-release.yml');
+  expect(publishing).toContain('Trusted Publishing');
   expect(publishing).toContain('npm run verify');
   const shrinkwrap = JSON.parse(await readFile('npm-shrinkwrap.json', 'utf8'));
   expect(shrinkwrap.version).toBe(pkg.version);

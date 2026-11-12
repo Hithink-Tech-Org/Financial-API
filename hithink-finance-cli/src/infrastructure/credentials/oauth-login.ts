@@ -125,10 +125,17 @@ export async function startOAuthLogin(options: {
               );
               return;
             }
+            const storage =
+              message.code?.startsWith('AUTH_STORAGE_') === true ||
+              message.code === 'AUTH_HOME_UNAVAILABLE' ||
+              message.code === 'AUTH_MIGRATION_REQUIRED';
             reject(
               authError(
                 message.code ?? 'AUTH_LOGIN_FAILED',
-                'Authorization failed. Start a new login.',
+                storage
+                  ? 'Credential storage could not be prepared.'
+                  : 'Authorization failed. Start a new login.',
+                storage,
               ),
             );
           } else if (message.type === 'complete') {

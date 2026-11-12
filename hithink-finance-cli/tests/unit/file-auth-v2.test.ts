@@ -1,8 +1,10 @@
 import { createCipheriv, randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test, vi } from 'vitest';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { authPaths } from '../../src/infrastructure/credentials/auth-paths.js';
 import {
   ensureAuthDirectory,
@@ -46,9 +48,14 @@ function legacy(secret: Record<string, string>) {
   };
 }
 
-test('an inherited or broad pre-existing empty directory cannot receive credentials', async () => {
+test('a broad pre-existing empty directory cannot receive credentials', async () => {
   const f = await fixture();
   await mkdir(f.paths.root, { recursive: true, mode: 0o755 });
+  if (process.platform === 'win32')
+    await promisify(execFile)('icacls.exe', [f.paths.root, '/grant', '*S-1-1-0:(R)'], {
+      windowsHide: true,
+    });
+  else await chmod(f.paths.root, 0o777);
   const action = vi.fn(async () => undefined);
   await expect(f.store.transaction(action)).rejects.toMatchObject({
     code: 'AUTH_STORAGE_PERMISSIONS',

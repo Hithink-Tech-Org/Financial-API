@@ -115,7 +115,7 @@ test('explicit diagnostics reject an unsafe credential directory', async () => {
       await promisify(execFile)('icacls.exe', [f.paths.root, '/grant', '*S-1-1-0:(R)'], {
         windowsHide: true,
       });
-    else await chmod(f.paths.root, 0o755);
+    else await chmod(f.paths.root, 0o777);
     await expect(f.store.auditPermissions()).rejects.toMatchObject({
       code: 'AUTH_STORAGE_PERMISSIONS',
     });

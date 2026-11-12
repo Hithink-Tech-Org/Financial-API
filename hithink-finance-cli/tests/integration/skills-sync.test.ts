@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test } from 'vitest';
+import { packageVersion } from '../fixtures/package-version.js';
 import {
   buildSkillManifest,
   reconcileManagedSkills,
@@ -29,7 +30,7 @@ test('reports bundled Skills without claiming Agent discovery targets were verif
   const status = await readBundledSkillsStatus(packageRoot);
 
   expect(status).toMatchObject({
-    cliVersion: '0.2.0',
+    cliVersion: packageVersion,
     skillCount: 14,
     targetsVerified: false,
     targetStatus: 'not-verified',
