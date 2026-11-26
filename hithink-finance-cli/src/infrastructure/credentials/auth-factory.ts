@@ -9,6 +9,7 @@ import { FuyaoClient } from '../fuyao/client.js';
 export function createGlobalAuthProvider(
   baseUrl: string,
   env: NodeJS.ProcessEnv = process.env,
+  apiKey?: string,
 ): GlobalAuthProvider {
   const legacy = new KeyringCredentialStore();
   const product = deliveredOAuthConfig();
@@ -20,6 +21,7 @@ export function createGlobalAuthProvider(
     {
       legacy,
       env,
+      ...(apiKey === undefined ? {} : { apiKey }),
       ...(product ? { oauth: new OAuthClient(product) } : {}),
       validateOAuth: async (tokens, signal) => {
         if (!product)

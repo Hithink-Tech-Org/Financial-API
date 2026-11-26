@@ -67,6 +67,7 @@ from fuyao_client import (  # noqa: E402
     fund_market_snapshot,
     fund_performance_nav,
     fund_performance_returns,
+    fund_performance_nav_snapshot,
     fund_performance_drawdowns,
     fund_performance_indicators_historical,
     fund_news_article_list,
@@ -709,15 +710,24 @@ def build_parser() -> argparse.ArgumentParser:
             "fund portfolio holdings",
             _fund_detail_args(fund_portfolio_holdings),
         ),
-        (
-            "fund-returns",
-            "fund interval returns",
-            _fund_detail_args(fund_performance_returns),
-        ),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("--thscode", required=True)
         p.set_defaults(func=handler)
+
+    p = sub.add_parser("fund-nav-snapshot", help="latest unit and adjusted NAV for up to 20 funds")
+    p.add_argument("--thscodes", required=True)
+    p.set_defaults(func=lambda args: fund_performance_nav_snapshot(args.thscodes))
+
+    for name, description, query in (
+        ("fund-returns", "fund interval returns", fund_performance_returns),
+        ("fund-drawdowns", "fund drawdowns", fund_performance_drawdowns),
+    ):
+        p = sub.add_parser(name, help=description)
+        selector = p.add_mutually_exclusive_group(required=True)
+        selector.add_argument("--thscode")
+        selector.add_argument("--thscodes", help="1 to 20 comma-separated complete fund codes")
+        p.set_defaults(func=lambda args, fn=query: fn(args.thscode, thscodes=args.thscodes))
 
     p = sub.add_parser("fund-holders", help="fund holder structure")
     p.add_argument("--thscode", required=True)
@@ -756,7 +766,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, help_text, handler in (
         ("fund-industry-allocation", "fund industry allocation", _fund_detail_args(fund_portfolio_industry_allocation)),
-        ("fund-drawdowns", "fund drawdown periods", _fund_detail_args(fund_performance_drawdowns)),
         ("fund-dividends", "fund dividend records", _fund_detail_args(fund_corporate_actions_dividends)),
         ("fund-diagnostics", "fund diagnostics", _fund_detail_args(fund_diagnostics_detail)),
         ("fund-financial-indicators", "fund financial indicators", _fund_detail_args(fund_financials_indicators)),

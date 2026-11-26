@@ -254,7 +254,8 @@ const domainConfigs = {
       ['基金档案', '`fund profile`'],
       ['基金持仓', '`fund holdings`'],
       ['基金净值', '`fund nav`'],
-      ['基金区间收益', '`fund returns`'],
+      ['最新单位净值与复权净值（最多 20 只）', '`fund nav-snapshot --thscodes <codes>`'],
+      ['基金区间收益与回撤（单只或批量）', '`fund returns`、`fund drawdowns`'],
       ['基金持有人结构', '`fund holders`'],
       [
         '基金在线回测',
@@ -439,6 +440,15 @@ const localCommandDetails = {
       '核对响应 data.data 的唯一 thscode 数与 data.total；改变 page_info 后没有新增主键时停止，不把重复页当新增数据。已知代码可显式分批；未确认全集时报告已取得范围。',
     ],
   },
+  'fund.returns': {
+    exampleArgs: '--thscode 510300.SH',
+    preconditions: ['单查用 `--thscode`，批查用 `--thscodes`（最多 20 个原始代码），两者互斥。'],
+  },
+  'fund.drawdowns': {
+    exampleArgs: '--thscode 510300.SH',
+    preconditions: ['单查用 `--thscode`，批查用 `--thscodes`（最多 20 个原始代码），两者互斥。'],
+  },
+  'fund.nav-snapshot': { exampleArgs: '--thscodes 510300.SH,158001.SZ' },
   'fund.quota-list': {
     exampleArgs: `--tab '["nazhi100"]' --buy true --output fund-quota.json`,
     preconditions: ['tab 为类别字符串数组；示例类别来自现有契约，其他类别须有已知取值依据。'],
@@ -629,7 +639,9 @@ hithink-finance skills remove --format json
 
 ## 参数选择策略
 
-- 内容来自 CLI 包内的 Skills 与 manifest，发布到用户级共享目录，再链接到选定 Agent。\n- 首次安装和升级默认读取已保存策略：\`auto\` 仅检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy 与 QClaw；仅存在历史 \`skills\` 目录不算客户端证据，也不会创建未检测到的根目录。
+- 内容来自 CLI 包内的 Skills 与 manifest，发布到用户级共享目录，再链接到选定 Agent。
+- 首次安装和升级默认读取已保存策略：\`auto\` 仅检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy、QClaw 与 DeepSeek Harness；仅存在历史 \`skills\` 目录不算客户端证据，也不会创建未检测到的根目录。
+- DeepSeek Harness 使用 \`--agent dsh\`，默认同步到 \`$DSH_HOME/skills\`，未设置时使用 \`~/.dsh/skills\`。如果宿主使用共享或自定义发现目录，使用 \`--directory <absolute-path>\`。
 - 安装时可用 \`HITHINK_FINANCE_SKILLS_AGENTS=auto\` 或逗号分隔的目标替换策略。安装后 \`sync --agent <name>\` 是追加，不会移除已选目标；\`sync --agent auto\` 恢复自动检测并保留显式目标。
 - \`status\` 同时报告包内 manifest、共享内容、策略和逐目标文件验证。\`ready\` 只表示文件和链接/副本有效，不代表客户端已经加载；必要时新建会话。
 - 默认在 CLI 用户级数据目录维护一份共享内容，并在每个目标的各 Skill 目录建立链接；Windows 优先目录 junction，其他平台使用目录 symlink。\`--copy\` 只用于显式目标不兼容链接时，并保存该目标的复制模式以便升级继续更新。

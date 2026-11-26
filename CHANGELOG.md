@@ -8,6 +8,13 @@
 - 新增独立的 `hithink-finance-mcp`，提供 MCP 配置、业务域与 tool 选路；按业务分类合并文档，每个工具小节包含参数、返回字段及关联结构。
 - CLI 0.2.0 的领域 Skills 独立随包交付，description 负责首选路由，shared 提供通用规则和辅助选路。
 
+## 2026-11-26 — CLI 0.2.5 与 DeepSeek Harness 插件 0.1.0
+
+- CLI 新增基金最新净值查询，区间收益和回撤支持批量查询，每次最多 20 只基金。 [基金业绩接口](docs/api/fund/fund-performance.md) · [CLI 更新日志](hithink-finance-cli/CHANGELOG.md)
+- CLI 支持将配套 Skills 自动同步到已检测的 DeepSeek Harness，也可为指定目录手动同步。 [Skills 管理](hithink-finance-cli/README.md#agent-skill-lifecycle)
+- DeepSeek Harness 插件支持对话取数、交互图表、官方案例和可回访的金融看板。 [下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [图文指南](dsh-plugins/hithink-finance/README.md)
+- 端内文档补充股票与指数主力资金分时和分钟序列。
+
 ## 2026-10-16 — 资讯工具与代码空值语义同步
 
 - CLI 与 Python SDK 新增资讯详情、快讯列表与刷新、公告详情与解读、热门专题、日期范围异动解读、个股分时新闻七项入口。

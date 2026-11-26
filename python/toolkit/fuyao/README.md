@@ -89,6 +89,7 @@ python python/toolkit/fuyao/scripts/fuyao.py index-catalog --tag cn_concept
 python python/toolkit/fuyao/scripts/fuyao.py index-constituents --thscode 000300.SH
 
 # 基金
+python python/toolkit/fuyao/scripts/fuyao.py fund-nav-snapshot --thscodes 510300.SH,158001.SZ
 python python/toolkit/fuyao/scripts/fuyao.py fund-nav --thscode 025480.OF --range year
 python python/toolkit/fuyao/scripts/fuyao.py fund-holders --thscode 161725.SZ --merge-scope all
 python python/toolkit/fuyao/scripts/fuyao.py fund-historical --thscode 510300.SH \

@@ -1,21 +1,78 @@
 name: hithink-finance-cli CI
 on:
   pull_request:
-    paths: ['hithink-finance-cli/**', '.github/workflows/hithink-finance-cli-ci.yml']
+    paths:
+      [
+        "hithink-finance-cli/**",
+        ".github/workflows/hithink-finance-cli-ci.yml",
+        ".github/workflows/hithink-finance-cli-release.yml",
+      ]
   push:
-    branches: ['**']
-    paths: ['hithink-finance-cli/**', '.github/workflows/hithink-finance-cli-ci.yml']
+    branches: ["**"]
+    paths:
+      [
+        "hithink-finance-cli/**",
+        ".github/workflows/hithink-finance-cli-ci.yml",
+        ".github/workflows/hithink-finance-cli-release.yml",
+      ]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to verify on Node 22 and 24
+        type: choice
+        default: all
+        options: [all, windows, linux, macos]
+permissions:
+  contents: read
 jobs:
   verify:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hithink-finance-cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: hithink-finance-cli/npm-shrinkwrap.json
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: npm pack --dry-run --ignore-scripts
+  select-platforms:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.select.outputs.targets }}
+    steps:
+      - id: select
+        env:
+          CI_PLATFORM: ${{ inputs.platform }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const targets = [
+            { os: 'windows-latest', arch: 'x64' },
+            { os: 'ubuntu-latest', arch: 'x64' },
+            { os: 'ubuntu-24.04-arm', arch: 'arm64' },
+            { os: 'macos-15-intel', arch: 'x64' },
+            { os: 'macos-15', arch: 'arm64' },
+          ];
+          const prefixes = { windows: 'windows-', linux: 'ubuntu-', macos: 'macos-' };
+          const scope = process.env.CI_PLATFORM;
+          if (scope !== 'all' && !Object.hasOwn(prefixes, scope)) throw Error('Unknown platform scope.');
+          const selected = scope === 'all' ? targets : targets.filter(t => t.os.startsWith(prefixes[scope]));
+          appendFileSync(process.env.GITHUB_OUTPUT, 'targets=' + JSON.stringify(selected) + '\n');
+          NODE
+  platform-verify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: select-platforms
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - { os: windows-latest, arch: x64 }
-          - { os: ubuntu-latest, arch: x64 }
-          - { os: ubuntu-24.04-arm, arch: arm64 }
-          - { os: macos-15-intel, arch: x64 }
-          - { os: macos-15, arch: arm64 }
+        target: ${{ fromJSON(needs.select-platforms.outputs.targets) }}
         node: [22, 24]
     runs-on: ${{ matrix.target.os }}
     defaults:

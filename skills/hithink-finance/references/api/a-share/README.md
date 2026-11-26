@@ -85,12 +85,13 @@
 
 ## 资金流向
 
-端内主力资金快照和历史。
+端内主力资金查询，按股票或指数选择分时与分钟序列。
 
 | 需求 / 文档 | 接口或工具 | 使用范围 |
 | --- | --- | --- |
 | [资金流向实时快照](capital-flow.md#capital-flow-snapshot) | `GET /api/a-share/capital-flow/snapshot` | 端内专用，客户端可用 |
 | [资金流向历史](capital-flow.md#capital-flow-historical) | `GET /api/a-share/capital-flow/historical` | 端内专用，客户端可用 |
+| [股票主力资金分钟序列](capital-flow.md#capital-flow-intraday) | `GET /api/a-share/capital-flow/intraday` | 端内专用，客户端可用 |
 
 ## 高频动向
 

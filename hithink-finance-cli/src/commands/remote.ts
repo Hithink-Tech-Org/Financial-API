@@ -16,22 +16,51 @@
 import { InvalidArgumentError, Option, type Command } from 'commander';
 import type { CliContext } from '../cli/context.js';
 import { localizeText } from '../cli/i18n.js';
-import type { RemoteCapabilityDescriptor } from '../contracts/remote-capabilities.js';
+import {
+  stockAdjustment,
+  stockBatchHistoryInput,
+  stockHistoryInput,
+  type RemoteCapabilityDescriptor,
+} from '../contracts/remote-capabilities.js';
 import { successEnvelope } from '../contracts/envelope.js';
-import { CliError } from '../contracts/errors.js';
+import { CliError, throwIfCancelled } from '../contracts/errors.js';
 import { executeRemoteQuery } from '../application/use-cases/remote-query.js';
 import type { GlobalAuthProvider } from '../infrastructure/credentials/global-provider.js';
 import { FuyaoClient } from '../infrastructure/fuyao/client.js';
 import { renderResult } from '../output/renderer.js';
 import { chooseSource, type DataSource } from '../application/source-policy.js';
 import { openDatabase } from '../infrastructure/duckdb/connection.js';
-import { getHistory } from '../application/use-cases/market-history.js';
+import {
+  getHistory,
+  readCompatibleHistory,
+  restHistoryData,
+} from '../application/use-cases/market-history.js';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { readStdin } from '../infrastructure/filesystem/stdin.js';
 import { writeDataFile, type DataFileFormat } from '../output/files.js';
 import { dataRows } from '../output/records.js';
 import { remoteOutputOptions } from '../contracts/output-options.js';
+
+const shanghaiDate = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function missingLocalHistory(compatible = false): CliError {
+  return new CliError({
+    code: 'DATA_INITIALIZATION_REQUIRED',
+    category: 'local-data',
+    message: compatible
+      ? '本地库无法提供覆盖完整且口径一致的历史行情。'
+      : 'Local history does not cover the requested symbol and window.',
+    hint: 'Initialize or sync the local database, or choose the remote data source.',
+    retryable: false,
+    exitCode: 5,
+  });
+}
 
 /**
  * 远程命令注册所需的依赖项集合
@@ -284,9 +313,14 @@ export function registerRemoteCapabilityGroup(
       // 合并所有来源的股票代码并去重
       const combinedCodes =
         capability.id.endsWith('-batch') ||
-        ['valuation.snapshot', 'special.anomaly-stock', 'special.auction-opportunities'].includes(
-          capability.id,
-        )
+        [
+          'fund.nav-snapshot',
+          'fund.returns',
+          'fund.drawdowns',
+          'valuation.snapshot',
+          'special.anomaly-stock',
+          'special.auction-opportunities',
+        ].includes(capability.id)
           ? rawCodes(raw.thscodes, codeFileTokens(fileCodes), codeFileTokens(stdinCodes))
           : normalizedCodes(raw.thscodes, fileCodes, stdinCodes);
       if (combinedCodes !== undefined) schemaInput.thscodes = combinedCodes;
@@ -318,9 +352,70 @@ export function registerRemoteCapabilityGroup(
             ).trim()
           : globals.apiKey;
       const requested = globals.source ?? 'auto';
+      const dailyStock = capability.id === 'market.history';
+      const batchStock = capability.id === 'market.history-batch';
+
+      async function renderLocal(data: unknown, adjust: string, count: number) {
+        const meta = { source: 'local' as const, requestId: context.requestId, count };
+        const envelope = successEnvelope(capability.id, data, { ...meta, adjust });
+        if (raw.output === undefined) return renderResult(envelope, context);
+        const outputPath = await writeDataFile(
+          path.resolve(context.cwd ?? process.cwd(), raw.output),
+          envelope,
+          raw.fileFormat,
+          context.signal,
+        );
+        return renderResult(
+          successEnvelope(capability.id, { path: outputPath, format: raw.fileFormat, count }, meta),
+          context,
+        );
+      }
 
       // ========== market.history 特有：本地优先回退逻辑 ==========
-      if (capability.id === 'market.history') {
+      if (context.compatibleHistory && (dailyStock || batchStock)) {
+        if (requested !== 'remote') {
+          const input = dailyStock
+            ? stockHistoryInput.parse(parsed.data)
+            : stockBatchHistoryInput.parse(parsed.data);
+          const thscodes = 'thscode' in input ? [input.thscode] : input.thscodes.split(',');
+          const adjust = stockAdjustment.parse(input.adjust ?? 'forward');
+          if (!('interval' in input) || input.interval === '1d') {
+            const databasePath = globals.db ?? dependencies.defaultDbPath;
+            let rows: Awaited<ReturnType<typeof readCompatibleHistory>>;
+            try {
+              const opened = await openDatabase(databasePath, { readOnly: true });
+              try {
+                rows = await readCompatibleHistory(
+                  opened.connection,
+                  { ...input, thscodes, adjust },
+                  context.signal,
+                );
+              } finally {
+                opened.close();
+              }
+            } catch {
+              throwIfCancelled(context.signal);
+            }
+            if (rows !== undefined) {
+              const data = batchStock
+                ? {
+                    interval: '1d',
+                    adjust,
+                    item: thscodes.map((thscode) => ({
+                      thscode,
+                      ...restHistoryData(rows.filter((row) => row.thscode === thscode)),
+                    })),
+                  }
+                : context.preserveJson
+                  ? { ...restHistoryData(rows), thscode: thscodes[0], interval: '1d', adjust }
+                  : rows;
+              await renderLocal(data, adjust, rows.length);
+              return;
+            }
+          }
+          if (requested === 'local') throw missingLocalHistory(true);
+        }
+      } else if (dailyStock) {
         const input = parsed.data as {
           thscode: string;
           startMs: number;
@@ -337,19 +432,31 @@ export function registerRemoteCapabilityGroup(
           (await stat(databasePath)
             .then((value) => value.isFile())
             .catch(() => false));
-        let coversWindow = false;
         if (exists) {
           const opened = await openDatabase(databasePath);
           try {
-            const start = new Date(input.startMs).toISOString().slice(0, 10);
-            const end = new Date(input.endMs).toISOString().slice(0, 10);
-            // 查询本地 K 线数据的时间覆盖范围
+            const start = shanghaiDate.format(input.startMs);
+            const end = shanghaiDate.format(input.endMs);
             const coverage = await opened.connection.runAndReadAll(
-              'SELECT min(date)::VARCHAR,max(date)::VARCHAR FROM raw_kline_daily',
+              `SELECT min(date)::VARCHAR, max(date)::VARCHAR,
+                  (SELECT count(*)::VARCHAR FROM (
+                    SELECT DISTINCT date FROM raw_kline_daily WHERE date BETWEEN $start AND $end
+                    EXCEPT
+                    SELECT date FROM raw_kline_daily WHERE thscode = $symbol
+                  ))
+                FROM raw_kline_daily WHERE thscode = $symbol`,
+              { symbol: input.thscode, start, end },
             );
             const row = coverage.getRowsJson()[0];
-            // 判断本地数据是否完全覆盖请求的时间窗口
-            coversWindow = String(row?.[0] ?? '') <= start && String(row?.[1] ?? '') >= end;
+            const earliest = row?.[0];
+            const latest = row?.[1];
+            const coversWindow =
+              typeof earliest === 'string' &&
+              typeof latest === 'string' &&
+              earliest <= start &&
+              latest >= end &&
+              row?.[2] === '0';
+            if (requested === 'local' && !coversWindow) throw missingLocalHistory();
             const source = chooseSource(
               { kind: 'history', requested, symbolCount: 1 },
               { exists, coversWindow },
@@ -366,43 +473,14 @@ export function registerRemoteCapabilityGroup(
                 },
                 context.signal,
               );
-              const envelope = successEnvelope(capability.id, rows, {
-                source: 'local',
-                adjust: input.adjust,
-                requestId: context.requestId,
-                count: rows.length,
-              });
-              if (raw.output !== undefined) {
-                const outputPath = await writeDataFile(
-                  path.resolve(context.cwd ?? process.cwd(), raw.output),
-                  envelope,
-                  raw.fileFormat,
-                  context.signal,
-                );
-                await renderResult(
-                  successEnvelope(
-                    capability.id,
-                    { path: outputPath, format: raw.fileFormat, count: rows.length },
-                    {
-                      source: 'local',
-                      requestId: context.requestId,
-                      count: rows.length,
-                    },
-                  ),
-                  context,
-                );
-              } else {
-                await renderResult(envelope, context);
-              }
+              if (rows.length === 0) throw missingLocalHistory();
+              await renderLocal(rows, input.adjust, rows.length);
               return;
             }
           } finally {
             opened.close();
           }
-        } else {
-          // 本地数据库不存在，记入 source-policy 但不影响路由
-          chooseSource({ kind: 'history', requested, symbolCount: 1 }, { exists, coversWindow });
-        }
+        } else if (requested === 'local') throw missingLocalHistory();
       } else if (requested === 'local') {
         // 非 market.history 命令显式指定了 --source=local
         // 根据命令组推断 query kind 并进行本地健康检查

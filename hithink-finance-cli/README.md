@@ -128,6 +128,7 @@ hithink-finance market snapshot --thscodes 600519.SH --format json
 hithink-finance market auction-snapshot --thscodes 600519.SH --stage final --format json
 hithink-finance financials income --thscode 600519.SH --limit 4 --format json
 hithink-finance index constituents --thscode 000300.SH --format json
+hithink-finance fund nav-snapshot --thscodes 510300.SH,158001.SZ --format json
 hithink-finance fund nav --thscode 025480.OF --range year --format json
 hithink-finance fund manager-detail --manager-id <id> --format json
 hithink-finance fund backtest-indicators --format json
@@ -250,7 +251,7 @@ CLI 按以下顺序解析非敏感配置：
 
 CLI 包内包含 14 个独立 Skills，宿主优先根据 description 直接选择业务域，选中后读取对应入口与命令 reference；共享规则和辅助选路由 `hithink-finance-shared` 提供。通过 `hithink-finance skills status|sync|remove` 安装、检查和移除。
 
-首次全局安装采用保存的 `auto` 策略：检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy 和 QClaw，并只向检测到的客户端同步。仅存在旧 `skills` 目录不算安装证据；未检测到任何客户端时不会创建一批 Agent 根目录。CLI 升级和 `update` 会复用同一策略自动更新。
+首次全局安装采用保存的 `auto` 策略：检测已安装的 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、GitHub Copilot CLI、Trae、WorkBuddy、QClaw 和 DeepSeek Harness（DSH），并只向检测到的客户端同步。仅存在旧 `skills` 目录不算安装证据；未检测到任何客户端时不会创建一批 Agent 根目录。CLI 升级和 `update` 会复用同一策略自动更新。
 
 默认将内容发布到 CLI 用户级数据目录，再为每个目标的每个 Skill 建立目录链接（Windows 为 junction，其他平台为 symlink），因此多 Agent 只共享一份内容。`status --format json` 实际校验共享内容和逐目标文件；`ready` 不代表客户端已加载，新增后可能需要刷新或新建会话。
 
@@ -275,6 +276,9 @@ hithink-finance skills sync --repair --format json
 | Trae / Trae CN     | `~/.trae/skills/` / `~/.trae-cn/skills/`                                         |
 | WorkBuddy          | `~/.workbuddy/skills/`                                                           |
 | QClaw              | `~/.qclaw/skills/`                                                               |
+| DeepSeek Harness   | `$DSH_HOME/skills/`，缺省为 `~/.dsh/skills/`                                     |
+
+DSH 启动过后可使用默认自动同步，也可显式运行 `hithink-finance skills sync --agent dsh`。如果 DSH 配置了共享或自定义 Skills 根目录，用 `--directory <absolute-path>` 保存该目录。`skills status` 会列出已托管的 DSH 目录，`skills remove --agent dsh` 清理各已记录目录中的 CLI 托管文件。
 
 链接或同步异常时，先运行 `skills status --format json` 查看目标详情，再使用下面的命令修复。客户端不支持目录链接时，可为该目标选择 `--copy`；CLI 会验证并替换自己管理的链接，保留共享源内容及其他 Agent 的链接。安装后刷新或新建 Agent 会话。
 
@@ -282,6 +286,7 @@ hithink-finance skills sync --repair --format json
 # 追加目标，保留已有选择
 hithink-finance skills sync --agent claude-code --format json
 hithink-finance skills sync --agent workbuddy --agent qclaw --format json
+hithink-finance skills sync --agent dsh --format json
 
 # 回到自动检测；已显式添加的目标仍保留
 hithink-finance skills sync --agent auto --format json

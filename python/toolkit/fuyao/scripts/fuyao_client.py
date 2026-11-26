@@ -952,9 +952,24 @@ def fund_performance_nav(
     )
 
 
-def fund_performance_returns(thscode: str) -> dict[str, Any]:
-    """Fund interval-return summary for one fund thscode."""
-    return _fund_detail("/api/fund/performance/returns", thscode)
+def fund_performance_nav_snapshot(thscodes: str | Iterable[str]) -> dict[str, Any]:
+    """Latest unit and adjusted NAV for up to 20 fund codes."""
+    return _get("/api/fund/performance/nav-snapshot", {"thscodes": _batch_codes(thscodes, 20)})
+
+
+def _performance_selector(thscode: str | None, thscodes: str | Iterable[str] | None) -> dict[str, str]:
+    if (thscode is None) == (thscodes is None):
+        raise ValueError("provide exactly one of thscode and thscodes")
+    if thscodes is not None:
+        return {"thscodes": _batch_codes(thscodes, 20)}
+    return {"thscode": _validate_fund_target(thscode)}
+
+
+def fund_performance_returns(
+    thscode: str | None = None, *, thscodes: str | Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Fund interval returns for one code or a batch of up to 20."""
+    return _get("/api/fund/performance/returns", _performance_selector(thscode, thscodes))
 
 
 def fund_holders_detail(
@@ -1056,8 +1071,10 @@ def fund_performance_indicators_historical(
     )
 
 
-def fund_performance_drawdowns(thscode: str) -> dict[str, Any]:
-    return _fund_detail("/api/fund/performance/drawdowns", thscode)
+def fund_performance_drawdowns(
+    thscode: str | None = None, *, thscodes: str | Iterable[str] | None = None,
+) -> dict[str, Any]:
+    return _get("/api/fund/performance/drawdowns", _performance_selector(thscode, thscodes))
 
 
 def fund_holders_top(
@@ -2091,6 +2108,7 @@ __all__ = [
     "fund_portfolio_holdings",
     "fund_performance_nav",
     "fund_performance_returns",
+    "fund_performance_nav_snapshot",
     "fund_holders_detail",
     "fund_market_snapshot",
     "fund_market_historical",

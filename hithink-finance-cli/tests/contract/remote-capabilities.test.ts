@@ -28,6 +28,7 @@ const EXPECTED_BASE_IDS = [
   'fund.profile',
   'fund.holdings',
   'fund.nav',
+  'fund.nav-snapshot',
   'fund.returns',
   'fund.holders',
   'fund.snapshot',
@@ -89,7 +90,7 @@ const EXPECTED_BASE_IDS = [
   'special.dragon-tiger',
 ];
 
-test('registers all 112 remote capabilities with unique command paths', () => {
+test('registers all 113 remote capabilities with unique command paths', () => {
   expect(remoteCapabilities.map((capability) => capability.id).sort()).toEqual(
     [
       ...EXPECTED_BASE_IDS,
@@ -123,7 +124,7 @@ test('registers all 112 remote capabilities with unique command paths', () => {
     ].sort(),
   );
   expect(new Set(remoteCapabilities.map((capability) => capability.command.join(' '))).size).toBe(
-    112,
+    113,
   );
   expect(remoteCapabilities.every((capability) => capability.method === 'GET')).toBe(true);
 });
@@ -236,12 +237,13 @@ test('maps valuation snapshot to its dedicated command and validates raw code to
   expect(valuation.inputSchema.safeParse({ thscodes: '000300.TI' }).success).toBe(false);
 });
 
-test('keeps all 35 fund capabilities under the fund command group', () => {
+test('keeps all 36 fund capabilities under the fund command group', () => {
   const fund = remoteCapabilities.filter((capability) => capability.id.startsWith('fund.'));
   expect(fund.map((capability) => capability.command.join(' '))).toEqual([
     'fund profile',
     'fund holdings',
     'fund nav',
+    'fund nav-snapshot',
     'fund returns',
     'fund holders',
     'fund snapshot',
@@ -279,6 +281,7 @@ test('keeps all 35 fund capabilities under the fund command group', () => {
     '/api/fund/profile/detail',
     '/api/fund/portfolio/holdings',
     '/api/fund/performance/nav',
+    '/api/fund/performance/nav-snapshot',
     '/api/fund/performance/returns',
     '/api/fund/holders/detail',
     '/api/fund/market/snapshot',
@@ -619,4 +622,23 @@ test('enforces index and special-data enums and date formats', () => {
   )!;
   expect(dragonTiger.inputSchema.safeParse({ boardType: 'invalid' }).success).toBe(false);
   expect(dragonTiger.inputSchema.safeParse({ date: '20260708' }).success).toBe(false);
+});
+
+test.each(['nav-snapshot', 'returns', 'drawdowns'])('maps fund %s batch selectors', (name) => {
+  const capability = remoteCapabilities.find((item) => item.id === 'fund.' + name)!;
+  expect(capability.command).toEqual(['fund', name]);
+  expect(capability.endpoint).toBe('/api/fund/performance/' + name);
+  const schema = capability.inputSchema;
+  expect(schema.parse({ thscodes: '510300.sh,158001.SZ' })).toEqual({
+    thscodes: '510300.SH,158001.SZ',
+  });
+  expect(schema.safeParse({ thscode: '510300.SH' }).success).toBe(name !== 'nav-snapshot');
+  for (const input of [
+    {},
+    { thscodes: Array(21).fill('510300.SH').join(',') },
+    { thscodes: '510300.SH,' },
+    { thscode: '510300.SH', thscodes: '158001.SZ' },
+  ]) {
+    expect(schema.safeParse(input).success).toBe(false);
+  }
 });

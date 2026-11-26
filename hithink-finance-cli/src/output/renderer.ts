@@ -96,7 +96,11 @@ export async function renderResult(result: Envelope, context: CliContext): Promi
 
   // JSON / NDJSON 模式：统一序列化
   if (format === 'json' || format === 'ndjson') {
-    stream.write(renderJson(result, format === 'json' && context.format === 'json'));
+    stream.write(
+      context.preserveJson
+        ? JSON.stringify(result) + '\n'
+        : renderJson(result, format === 'json' && context.format === 'json'),
+    );
     return;
   }
 

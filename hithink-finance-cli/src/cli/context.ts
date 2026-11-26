@@ -53,6 +53,8 @@ export interface CliContext {
   signal: AbortSignal;
   /** Whether redacted diagnostic details should be included in error output. */
   debug: boolean;
+  preserveJson?: boolean;
+  compatibleHistory?: boolean;
   /** Human table controls; machine formats and exports use the complete result. */
   maxRows?: number;
   tableColumns?: readonly string[];
@@ -112,6 +114,8 @@ export function createCliContext(
     stdin?: Readable;
     stdout?: NodeJS.WriteStream;
     stderr?: NodeJS.WriteStream;
+    preserveJson?: boolean;
+    compatibleHistory?: boolean;
   } = {},
 ): CliContext {
   const env = defaults.env ?? process.env;
@@ -157,6 +161,8 @@ export function createCliContext(
     stdout,
     stderr,
     signal: defaults.signal ?? new AbortController().signal,
+    ...(defaults.preserveJson && { preserveJson: true }),
+    ...(defaults.compatibleHistory && { compatibleHistory: true }),
     debug:
       argv.includes('--debug') ||
       env.DEBUG?.split(',').some((value) => value.trim().startsWith('hithink-finance')) === true,

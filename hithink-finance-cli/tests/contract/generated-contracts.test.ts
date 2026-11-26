@@ -13,7 +13,7 @@ test('publishes generated capability and envelope schemas', async () => {
   const capabilities = JSON.parse(await readFile('schemas/capabilities.json', 'utf8')) as {
     capabilities: unknown[];
   };
-  expect(capabilities.capabilities).toHaveLength(135);
+  expect(capabilities.capabilities).toHaveLength(136);
   await expect(access('schemas/command-envelope.schema.json')).resolves.toBeUndefined();
   const envelope = JSON.parse(await readFile('schemas/command-envelope.schema.json', 'utf8'));
   expect(
@@ -73,7 +73,7 @@ test('generated Skill manifest pins every owned file by sha256', async () => {
   const manifest = JSON.parse(await readFile('skills/manifest.json', 'utf8')) as {
     files: Record<string, string>;
   };
-  expect(Object.keys(manifest.files)).toHaveLength(145);
+  expect(Object.keys(manifest.files)).toHaveLength(146);
   expect(Object.values(manifest.files).every((hash) => /^[a-f0-9]{64}$/u.test(hash))).toBe(true);
 });
 

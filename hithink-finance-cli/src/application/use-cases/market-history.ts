@@ -15,6 +15,7 @@
  */
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { queryReadOnly } from './local-query.js';
+import { withDuckDbInterrupt } from '../../infrastructure/duckdb/connection.js';
 
 /**
  * 查询指定股票的日线行情历史。
@@ -55,4 +56,107 @@ export async function getHistory(
     `SELECT * FROM ${view} WHERE ${filters.join(' AND ')} ORDER BY thscode,date`,
     signal,
   );
+}
+
+const day = 86_400_000;
+const shanghaiOffset = 8 * 3_600_000;
+
+function weekday(date: number, direction: -1 | 1): string {
+  const utcDay = new Date(date).getUTCDay();
+  if (utcDay === 0) date += day * (direction === 1 ? 1 : -2);
+  if (utcDay === 6) date += day * (direction === 1 ? 2 : -1);
+  return new Date(date).toISOString().slice(0, 10);
+}
+
+export async function symbolsEligibleForRawForwardHistory(
+  connection: DuckDBConnection,
+  { thscodes, start }: { thscodes: readonly string[]; start: string },
+  signal: AbortSignal,
+): Promise<ReadonlySet<string>> {
+  // A later corporate action can reprice earlier bars. Use raw prices only with a current dump.
+  const proof = await withDuckDbInterrupt(connection, signal, () =>
+    connection.runAndReadAll(
+      `SELECT requested.thscode FROM (SELECT unnest(string_split($codes, ',')) AS thscode) requested
+       WHERE (SELECT max(date) FROM raw_kline_daily) >= $latest_required::DATE
+         AND EXISTS (SELECT 1 FROM _meta WHERE key = 'last_adjustment_release_id')
+         AND NOT EXISTS (SELECT 1 FROM raw_adjustment_events
+           WHERE ex_date >= $start::DATE AND thscode = requested.thscode)`,
+      {
+        codes: thscodes.join(','),
+        start,
+        latest_required: weekday(Date.now() + shanghaiOffset, -1),
+      },
+    ),
+  );
+  return new Set(
+    proof.getRowsJson().flatMap(([symbol]) => (typeof symbol === 'string' ? [symbol] : [])),
+  );
+}
+
+/**
+ * Return an empty result for a confirmed no-bar window, or undefined when local coverage is uncertain.
+ * The coverage check can only see dates present in the market-wide data.
+ */
+export async function readCompatibleHistory(
+  connection: DuckDBConnection,
+  request: {
+    thscodes: readonly string[];
+    startMs: number;
+    endMs: number;
+    adjust: 'none' | 'forward' | 'backward';
+  },
+  signal: AbortSignal,
+): Promise<Record<string, unknown>[] | undefined> {
+  const { thscodes, startMs, endMs, adjust } = request;
+  const firstBar = Math.ceil((startMs + shanghaiOffset) / day) * day;
+  const lastBar = Math.floor((endMs + shanghaiOffset) / day) * day;
+  const start = new Date(firstBar).toISOString().slice(0, 10);
+  const end = new Date(lastBar).toISOString().slice(0, 10);
+  const params = { start, end, codes: thscodes.join(',') };
+  const coverage = await withDuckDbInterrupt(connection, signal, () =>
+    connection.runAndReadAll(
+      `SELECT min(date)::VARCHAR, max(date)::VARCHAR,
+          (SELECT count(DISTINCT thscode)::INTEGER FROM raw_kline_daily
+            WHERE thscode IN (SELECT unnest(string_split($codes, ',')))),
+          (SELECT count(DISTINCT date)::INTEGER FROM raw_kline_daily
+            WHERE date BETWEEN $start::DATE AND $end::DATE)
+        FROM raw_kline_daily`,
+      params,
+    ),
+  );
+  const [earliest, latest, known, sessions] = coverage.getRowsJson()[0] ?? [];
+  if (
+    typeof earliest !== 'string' ||
+    typeof latest !== 'string' ||
+    known !== thscodes.length ||
+    typeof sessions !== 'number' ||
+    (firstBar > lastBar ? earliest > end : earliest > weekday(firstBar, 1)) ||
+    latest < weekday(lastBar, -1)
+  )
+    return undefined;
+  if (sessions === 0) return firstBar > lastBar || weekday(firstBar, 1) > end ? [] : undefined;
+  if (adjust === 'backward') return undefined;
+  if (adjust === 'forward') {
+    const eligible = await symbolsEligibleForRawForwardHistory(
+      connection,
+      { thscodes, start },
+      signal,
+    );
+    if (eligible.size !== thscodes.length) return undefined;
+  }
+  const rows = await getHistory(connection, { thscodes, start, end, adjust: 'none' }, signal);
+  return rows.length === sessions * thscodes.length ? rows : undefined;
+}
+
+export function restHistoryData(rows: readonly Record<string, unknown>[]) {
+  const item = rows.map((row) => ({
+    date_ms: Date.parse(String(row.date) + 'T00:00:00+08:00'),
+    open_price: row.open,
+    high_price: row.high,
+    low_price: row.low,
+    close_price: row.close,
+    volume: row.volume,
+    turnover: row.amount,
+  }));
+  return { timestamp: item.at(-1)?.date_ms ?? null, item };
 }

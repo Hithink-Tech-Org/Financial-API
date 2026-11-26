@@ -24,3 +24,11 @@
 | [指数行情快照](a-share-index.md#prices-snapshot) | `GET /api/a-share-index/prices/snapshot` | 公开 |
 | [指数历史 K 线](a-share-index.md#prices-historical) | `GET /api/a-share-index/prices/historical` | 公开 |
 | [指数批量历史 K 线](a-share-index.md#prices-historical-batch) | `GET /api/a-share-index/prices/historical-batch` | 公开 |
+
+## 资金流向
+
+端内主力资金查询，按股票或指数选择分时与分钟序列。
+
+| 需求 / 文档 | 接口或工具 | 使用范围 |
+| --- | --- | --- |
+| [指数主力资金分时与分钟序列](capital-flow-intraday.md) | `GET /api/a-share-index/capital-flow/intraday` | 端内专用，客户端可用 |

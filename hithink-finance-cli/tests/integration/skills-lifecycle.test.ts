@@ -5,13 +5,15 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { buildSkillManifest } from '../../src/infrastructure/skills/manifest.js';
 import {
   readSkillsLifecycleStatus,
@@ -21,6 +23,11 @@ import {
 } from '../../src/infrastructure/skills/lifecycle.js';
 
 const roots: string[] = [];
+vi.mock('node:fs/promises', async (load) => {
+  const actual = await load<typeof import('node:fs/promises')>();
+  return { ...actual, symlink: vi.fn(actual.symlink), unlink: vi.fn(actual.unlink) };
+});
+
 async function fixture(): Promise<{
   packageRoot: string;
   paths: SkillsLifecyclePaths;
@@ -44,9 +51,24 @@ async function fixture(): Promise<{
     },
   };
 }
-afterEach(async () =>
-  Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))),
-);
+beforeEach(() => vi.stubEnv('DSH_HOME', undefined));
+afterEach(async () => {
+  vi.unstubAllEnvs();
+  vi.resetAllMocks();
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+async function addFixtureSkills(packageRoot: string, ...names: string[]): Promise<void> {
+  const source = path.join(packageRoot, 'skills');
+  for (const name of names) {
+    const directory = path.join(source, name);
+    await mkdir(directory);
+    await writeFile(path.join(directory, 'SKILL.md'), name);
+  }
+  const manifestFile = path.join(source, 'manifest.json');
+  await rm(manifestFile);
+  await writeFile(manifestFile, JSON.stringify(await buildSkillManifest(source, '0.2.0')));
+}
 
 test('auto mode does not mistake a historical Skills-only directory for an installed Agent', async () => {
   const value = await fixture();
@@ -56,6 +78,212 @@ test('auto mode does not mistake a historical Skills-only directory for an insta
   await expect(
     access(path.join(value.home, '.codex', 'skills', 'hithink-finance-test')),
   ).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('auto detects an initialized DSH home and preserves an existing auto strategy', async () => {
+  const value = await fixture();
+  vi.stubEnv('DSH_HOME', ' ');
+  const skills = path.join(value.home, '.dsh', 'skills');
+  const marker = path.join(value.home, '.dsh', 'profiles');
+  await mkdir(skills, { recursive: true });
+  await mkdir(value.paths.configDir, { recursive: true });
+  await writeFile(
+    path.join(value.paths.configDir, 'skills-targets.json'),
+    JSON.stringify({ version: 1, mode: 'auto', explicit: [], excluded: ['codex'], targets: {} }),
+  );
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home })).targets,
+  ).toEqual([]);
+
+  await mkdir(marker);
+  const result = await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home });
+  expect(result.targets).toEqual([
+    { name: 'dsh', directory: skills, delivery: 'link', status: 'ready' },
+  ]);
+  const deployed = path.join(skills, 'hithink-finance-test');
+  expect((await lstat(deployed)).isSymbolicLink()).toBe(true);
+  expect(await readFile(path.join(deployed, 'SKILL.md'), 'utf8')).toBe('official-v1');
+  expect(
+    (await readSkillsLifecycleStatus(value.packageRoot, value.paths, value.home)).strategy.excluded,
+  ).toEqual(['codex']);
+  await rm(deployed, { recursive: true });
+  expect(
+    (await readSkillsLifecycleStatus(value.packageRoot, value.paths, value.home)).targets[0]
+      ?.status,
+  ).toBe('missing');
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home })).failures,
+  ).toEqual([]);
+  expect(await readFile(path.join(deployed, 'SKILL.md'), 'utf8')).toBe('official-v1');
+});
+
+test('syncs DSH homes independently and removes only previously managed files', async () => {
+  const value = await fixture();
+  const root = await realpath(path.dirname(value.home));
+  const first = path.join(root, 'first', 'skills');
+  const second = path.join(root, 'second', 'skills');
+  const ownSkill = path.join(second, 'hithink-finance-test');
+  const unrelated = path.join(second, 'user-skill.md');
+  const options = { homeDir: value.home, agents: ['dsh' as const] };
+
+  vi.stubEnv('DSH_HOME', path.dirname(first));
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { ...options, copy: true }))
+      .failures,
+  ).toEqual([]);
+
+  vi.stubEnv('DSH_HOME', path.dirname(second));
+  await mkdir(ownSkill, { recursive: true });
+  await writeFile(path.join(ownSkill, 'SKILL.md'), 'user content');
+  await writeFile(unrelated, 'unrelated');
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([
+    expect.objectContaining({ name: 'dsh', directory: second, status: 'conflict' }),
+  ]);
+  expect(await readFile(path.join(ownSkill, 'SKILL.md'), 'utf8')).toBe('user content');
+  await rm(ownSkill, { recursive: true });
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([]);
+
+  const status = await readSkillsLifecycleStatus(value.packageRoot, value.paths, value.home);
+  expect(status.targets).toEqual([
+    { name: 'dsh', directory: first, delivery: 'copy', status: 'ready' },
+    { name: 'dsh', directory: second, delivery: 'copy', status: 'ready' },
+  ]);
+  vi.stubEnv('DSH_HOME', path.join(root, 'unused'));
+  expect(await removeLifecycleSkills(value.packageRoot, value.paths, options)).toEqual({
+    removed: ['dsh'],
+    failures: [],
+  });
+  await expect(access(path.join(first, 'hithink-finance-test'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+  await expect(access(ownSkill)).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await readFile(unrelated, 'utf8')).toBe('unrelated');
+});
+
+test('DSH uses a stored explicit Skills directory in preference to DSH_HOME', async () => {
+  const value = await fixture();
+  const root = await realpath(path.dirname(value.home));
+  const directory = path.join(root, 'shared-agents', 'skills');
+  vi.stubEnv('DSH_HOME', path.join(root, 'dsh-runtime'));
+  const result = await syncLifecycleSkills(value.packageRoot, value.paths, {
+    homeDir: value.home,
+    agents: ['dsh'],
+    directory,
+  });
+  expect(result.targets).toEqual([{ name: 'dsh', directory, delivery: 'link', status: 'ready' }]);
+  vi.stubEnv('DSH_HOME', path.join(root, 'another-dsh-runtime'));
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { homeDir: value.home })).targets,
+  ).toEqual(result.targets);
+});
+
+test('preflights every DSH Skill before creating links in another home', async () => {
+  const value = await fixture();
+  const root = await realpath(path.dirname(value.home));
+  const first = path.join(root, 'first', 'skills');
+  const second = path.join(root, 'second', 'skills');
+  const userSkill = path.join(second, 'hithink-finance-z-blocked');
+  const options = { homeDir: value.home, agents: ['dsh' as const] };
+  await addFixtureSkills(value.packageRoot, 'hithink-finance-z-blocked');
+  vi.stubEnv('DSH_HOME', path.dirname(first));
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([]);
+
+  vi.stubEnv('DSH_HOME', path.dirname(second));
+  await mkdir(userSkill, { recursive: true });
+  await writeFile(path.join(userSkill, 'SKILL.md'), 'user content');
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([
+    expect.objectContaining({ name: 'dsh', directory: second, status: 'conflict' }),
+  ]);
+  await expect(lstat(path.join(second, 'hithink-finance-test'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+  expect(await readFile(path.join(first, 'hithink-finance-test', 'SKILL.md'), 'utf8')).toBe(
+    'official-v1',
+  );
+  expect((await removeLifecycleSkills(value.packageRoot, value.paths, options)).removed).toEqual([
+    'dsh',
+  ]);
+  await expect(lstat(path.join(first, 'hithink-finance-test'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+  expect(await readFile(path.join(userSkill, 'SKILL.md'), 'utf8')).toBe('user content');
+});
+
+test('rolls back newly linked Skills on an I/O failure without rebuilding existing links', async () => {
+  const value = await fixture();
+  const options = { homeDir: value.home, agents: ['dsh' as const] };
+  const directory = path.join(value.home, '.dsh', 'skills');
+  const existing = path.join(directory, 'hithink-finance-test');
+  const added = path.join(directory, 'hithink-finance-z-added');
+  const blocked = path.join(directory, 'hithink-finance-z-blocked');
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([]);
+  await addFixtureSkills(value.packageRoot, 'hithink-finance-z-added', 'hithink-finance-z-blocked');
+  vi.mocked(symlink).mockClear();
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  vi.mocked(symlink)
+    .mockImplementationOnce(fs.symlink)
+    .mockRejectedValueOnce(new Error('injected link write failure'));
+
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([
+    expect.objectContaining({ directory, status: 'failed', detail: 'injected link write failure' }),
+  ]);
+  expect(vi.mocked(symlink).mock.calls.map(([, destination]) => destination)).toEqual([
+    added,
+    blocked,
+  ]);
+  await expect(lstat(added)).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await readFile(path.join(existing, 'SKILL.md'), 'utf8')).toBe('official-v1');
+  expect((await removeLifecycleSkills(value.packageRoot, value.paths, options)).removed).toEqual([
+    'dsh',
+  ]);
+  await expect(lstat(existing)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('records only the managed links left after an interrupted rollback in a second DSH home', async () => {
+  const value = await fixture();
+  const root = await realpath(path.dirname(value.home));
+  const first = path.join(root, 'first', 'skills');
+  const second = path.join(root, 'second', 'skills');
+  const retainedLink = path.join(second, 'hithink-finance-test');
+  const userSkill = path.join(second, 'hithink-finance-z-blocked', 'SKILL.md');
+  const options = { homeDir: value.home, agents: ['dsh' as const] };
+  await addFixtureSkills(value.packageRoot, 'hithink-finance-z-blocked');
+  vi.stubEnv('DSH_HOME', path.dirname(first));
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([]);
+
+  vi.stubEnv('DSH_HOME', path.dirname(second));
+  const fs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  vi.mocked(symlink)
+    .mockImplementationOnce(fs.symlink)
+    .mockImplementationOnce(async () => {
+      await mkdir(path.dirname(userSkill));
+      await writeFile(userSkill, 'user content');
+      throw new Error('injected link write failure');
+    });
+  vi.mocked(unlink).mockRejectedValueOnce(new Error('injected rollback failure'));
+
+  expect((await syncLifecycleSkills(value.packageRoot, value.paths, options)).failures).toEqual([
+    expect.objectContaining({
+      directory: second,
+      status: 'failed',
+      detail: expect.stringContaining('Could not roll back managed links: hithink-finance-test'),
+    }),
+  ]);
+  expect((await lstat(retainedLink)).isSymbolicLink()).toBe(true);
+  expect(
+    (await syncLifecycleSkills(value.packageRoot, value.paths, { ...options, copy: true }))
+      .failures,
+  ).toEqual([expect.objectContaining({ directory: second, status: 'conflict' })]);
+
+  expect(await removeLifecycleSkills(value.packageRoot, value.paths, options)).toEqual({
+    removed: ['dsh'],
+    failures: [],
+  });
+  await expect(lstat(path.join(first, 'hithink-finance-test'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+  await expect(lstat(retainedLink)).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await readFile(userSkill, 'utf8')).toBe('user content');
 });
 
 test('persists explicit targets, appends later Agents, and shares one linked content copy', async () => {

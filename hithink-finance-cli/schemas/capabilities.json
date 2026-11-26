@@ -434,6 +434,15 @@
       "source": "remote"
     },
     {
+      "id": "fund.nav-snapshot",
+      "command": ["fund", "nav-snapshot"],
+      "endpoint": "/api/fund/performance/nav-snapshot",
+      "method": "GET",
+      "paging": "none",
+      "window": "none",
+      "source": "remote"
+    },
+    {
       "id": "fund.news",
       "command": ["fund", "news"],
       "endpoint": "/api/fund/news/article-list",

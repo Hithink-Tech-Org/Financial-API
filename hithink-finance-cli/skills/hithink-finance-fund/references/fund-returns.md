@@ -5,19 +5,22 @@
 - 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema fund.returns --format json` 确认参数，未说明的组合规则再看命令 `--help`。
 - 远端调用先用 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。
+- 单查用 `--thscode`，批查用 `--thscodes`（最多 20 个原始代码），两者互斥。
 
 ## 命令
 
 ```bash
 hithink-finance schema fund.returns --format json
-hithink-finance fund returns --thscode <code> --format json
+hithink-finance fund returns --thscode 510300.SH --format json
+hithink-finance fund returns --codes-file codes.txt --output result.json --format json
 ```
 
 ## 参数选择策略
 
 | 参数                     | 必填 | 说明                                                                        |
 | ------------------------ | ---- | --------------------------------------------------------------------------- |
-| `--thscode <code>`       | 是   | single fund thscode                                                         |
+| `--thscode <code>`       | 否   | single fund thscode                                                         |
+| `--thscodes <codes>`     | 否   | 1-20 comma-separated fund thscodes                                          |
 | `--output <path>`        | 否   | write the response or data rows to a file                                   |
 | `--file-format <format>` | 否   | output file format (requires --output)；可选: json, ndjson, csv；默认: json |
 
@@ -34,4 +37,4 @@ hithink-finance fund returns --thscode <code> --format json
 ## 批量操作说明
 
 - 批量或全量请求必须落盘，最终只报告路径、行数和窗口。
-- 如果需要多标的循环，逐批执行并记录每批参数；不要把完整结果塞进上下文。
+- 支持 `--codes-file` 或 `--codes-stdin` 读取多 thscode；不要同时用 `--api-key-stdin` 和 `--codes-stdin`。

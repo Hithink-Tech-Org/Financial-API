@@ -12,7 +12,7 @@
 | `hithink-finance-hk-share` | `https://fuyao.aicubes.cn/mcp/hk-share` | 港股新股递表、认购、上市日历与发行详情 |
 | `hithink-finance-a-share-index` | `https://fuyao.aicubes.cn/mcp/a-share-index` | 指数/板块目录、成分和行情 |
 | `hithink-finance-meta` | `https://fuyao.aicubes.cn/mcp/meta` | 标的搜索、名称消歧和代码表 |
-| `hithink-finance-fund` | `https://fuyao.aicubes.cn/mcp/fund` | 基金资料、经理、披露、财务、回测、指标、QDII 额度、净值、收益、资讯和场内行情 |
+| `hithink-finance-fund` | `https://fuyao.aicubes.cn/mcp/fund` | 基金资料、经理、披露、财务、回测、指标、QDII 额度、最新净值快照、区间收益、回撤、资讯和场内行情 |
 | `hithink-finance-futures` | `https://fuyao.aicubes.cn/mcp/futures` | 期货品种、合约、持仓、仓单、基差、日程和行情 |
 | `hithink-finance-options` | `https://fuyao.aicubes.cn/mcp/options` | 期权品种、合约和行情 |
 | `hithink-finance-news` | `https://fuyao.aicubes.cn/mcp/news` | 资讯详情、快讯、公告解读、专题、日期范围异动解读与个股分时新闻 |

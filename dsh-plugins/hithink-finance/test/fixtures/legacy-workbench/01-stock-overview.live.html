@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>单股行情与趋势速览</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, "Microsoft YaHei", system-ui, sans-serif; color: #18283e; background:#f1f5fa; }
+    body { margin:0; padding:clamp(14px,4vw,34px); }
+    main { display:grid; gap:14px; max-width:1100px; margin:auto; }
+    header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:end; gap:14px; border-bottom:2px solid #5476a4; padding-bottom:16px; }
+    h1, h2, p { margin:0; } h1 { font-size:clamp(23px,4vw,35px); } h2 { font-size:16px; margin-bottom:12px; }
+    header p, footer { color:#496283; margin-top:7px; font-size:13px; line-height:1.5; }
+    label { display:grid; gap:5px; font-size:13px; } input { font:inherit; width:11ch; padding:6px 8px; border:1px solid #8096b6; border-radius:6px; }
+    section { padding:16px; min-width:0; border:1px solid #c7d4e4; border-radius:10px; background:white; overflow:auto; }
+    table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; } th,td { white-space:nowrap; padding:7px; text-align:left; border-bottom:1px solid #c7d4e4; }
+    @media (prefers-color-scheme: dark) { :root { color:#dbe9ff; background:#141e2e; } section { background:#1a2941; } section,th,td { border-color:#425674; } header p,footer { color:#a9bad2; } }
+  </style>
+  <script type="application/json" id="hithink-finance-data">
+    {
+      "version": 1,
+      "queries": {
+        "quote": {"command":"market.snapshot","source":"remote","params":{"thscodes":"300033.SZ","limit":1},"inputs":["thscodes"]},
+        "history": {"command":"market.history","source":"remote","params":{"thscode":"300033.SZ","adjust":"forward"},"inputs":["thscode","start-ms","end-ms"]}
+      }
+    }
+  </script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>单股行情与趋势速览</h1><p>A 股快照与近 370 个自然日前复权日线。修改代码后使用工作台的「刷新数据」。</p></div>
+      <label>A 股代码<input data-hf-stock type="text" value="300033.SZ" maxlength="9" aria-label="A 股同花顺标准代码"></label>
+    </header>
+    <section>
+      <h2>最新行情</h2>
+      <div data-hf-query="quote" data-hf-params='{"thscodes":"[data-hf-stock]"}' data-hf-view="table" data-hf-field="data.item"
+           data-hf-columns='{"thscode":"证券代码","last_price":"最新价（元）","price_change_ratio_pct":"涨跌幅（%）","volume":"成交量（股）","turnover":"成交额（元）"}'>刷新后显示最新行情。</div>
+    </section>
+    <section>
+      <h2>前复权收盘价（元）</h2>
+      <div data-hf-query="history" data-hf-params='{"thscode":"[data-hf-stock]"}' data-hf-window-days="370"
+           data-hf-view="line" data-hf-field="data.item" data-hf-x="date_ms" data-hf-x-type="date" data-hf-y="close_price">刷新后显示价格趋势。</div>
+    </section>
+    <section>
+      <h2>日线明细</h2>
+      <div data-hf-query="history" data-hf-params='{"thscode":"[data-hf-stock]"}' data-hf-window-days="370"
+           data-hf-view="table" data-hf-field="data.item"
+           data-hf-columns='{"date_ms":"交易日","open_price":"开盘（元）","high_price":"最高（元）","low_price":"最低（元）","close_price":"收盘（元）","turnover":"成交额（元）"}'>刷新后显示日线明细。</div>
+    </section>
+    <footer>同花顺金融数据 · 日线采用前复权，快照使用当时报价。仅作数据观察，非投资建议。</footer>
+  </main>
+</body>
+</html>

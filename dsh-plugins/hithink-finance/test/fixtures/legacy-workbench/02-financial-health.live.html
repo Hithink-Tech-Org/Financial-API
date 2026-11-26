@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>单股财务体检</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, "Microsoft YaHei", system-ui, sans-serif; color:#1f302a; background:#f2f6f3; }
+    body { margin:0; padding:clamp(14px,4vw,34px); }
+    main { display:grid; gap:14px; max-width:1100px; margin:auto; }
+    header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:end; gap:14px; border-bottom:2px solid #4c8268; padding-bottom:16px; }
+    h1,h2,p { margin:0; } h1 { font-size:clamp(23px,4vw,35px); } h2 { font-size:16px; margin-bottom:12px; }
+    header p,footer { color:#446c5d; margin-top:7px; font-size:13px; line-height:1.5; }
+    label { display:grid; gap:5px; font-size:13px; } input { font:inherit; width:11ch; padding:6px 8px; border:1px solid #829b8c; border-radius:6px; }
+    section { padding:16px; min-width:0; border:1px solid #c6dbd1; border-radius:10px; background:white; overflow:auto; }
+    table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; } th,td { white-space:nowrap; padding:7px; text-align:left; border-bottom:1px solid #c6dbd1; }
+    @media (prefers-color-scheme: dark) { :root { color:#daeee3; background:#15221c; } section { background:#203329; } section,th,td { border-color:#426454; } header p,footer { color:#abc8b9; } }
+  </style>
+  <script type="application/json" id="hithink-finance-data">
+    {
+      "version": 1,
+      "queries": {
+        "income": {"command":"financials.income","source":"remote","params":{"thscode":"300033.SZ","period":"quarterly","limit":8},"inputs":["thscode"]},
+        "balance": {"command":"financials.balance-sheet","source":"remote","params":{"thscode":"300033.SZ","period":"quarterly","limit":8},"inputs":["thscode"]},
+        "cashflow": {"command":"financials.cash-flow","source":"remote","params":{"thscode":"300033.SZ","period":"quarterly","limit":8},"inputs":["thscode"]}
+      }
+    }
+  </script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>单股财务体检</h1><p>最近八个季度报告期的利润表、资产负债表和现金流量表。修改代码后使用「刷新数据」。</p></div>
+      <label>A 股代码<input data-hf-stock type="text" value="300033.SZ" maxlength="9" aria-label="A 股同花顺标准代码"></label>
+    </header>
+    <section>
+      <h2>营业收入（原币元）</h2>
+      <div data-hf-query="income" data-hf-params='{"thscode":"[data-hf-stock]"}'
+           data-hf-view="line" data-hf-field="data.item" data-hf-x="period_end_ms" data-hf-x-type="date" data-hf-y="operating_income">刷新后显示营业收入。</div>
+    </section>
+    <section>
+      <h2>利润表</h2>
+      <div data-hf-query="income" data-hf-params='{"thscode":"[data-hf-stock]"}' data-hf-view="table" data-hf-field="data.item"
+           data-hf-columns='{"period_end_ms":"报告期末","currency":"币种","operating_income":"营业收入","operating_profit":"营业利润","net_profit":"净利润","parent_holder_net_profit":"归母净利润"}'>刷新后显示利润表。</div>
+    </section>
+    <section>
+      <h2>资产负债表</h2>
+      <div data-hf-query="balance" data-hf-params='{"thscode":"[data-hf-stock]"}' data-hf-view="table" data-hf-field="data.item"
+           data-hf-columns='{"period_end_ms":"报告期末","currency":"币种","assets_total":"资产总计","total_debt":"负债合计","holder_equity_total":"股东权益合计"}'>刷新后显示资产负债表。</div>
+    </section>
+    <section>
+      <h2>现金流量表</h2>
+      <div data-hf-query="cashflow" data-hf-params='{"thscode":"[data-hf-stock]"}' data-hf-view="table" data-hf-field="data.item"
+           data-hf-columns='{"period_end_ms":"报告期末","currency":"币种","act_cash_flow_net":"经营活动现金流量净额","invest_cash_flow_net":"投资活动现金流量净额","financing_cash_flow_net":"筹资活动现金流量净额"}'>刷新后显示现金流量表。</div>
+    </section>
+    <footer>同花顺金融数据 · 金额单位为原币元，利润和现金流沿用报表披露口径。缺失值保留为空。仅作数据观察，非投资建议。</footer>
+  </main>
+</body>
+</html>

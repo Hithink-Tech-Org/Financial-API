@@ -1,0 +1,34 @@
+.mast nav button {
+  height: 30px;
+  white-space: nowrap;
+  border: 0;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: transparent;
+  color: #c5cdd9;
+  font-size: 11px;
+  cursor: pointer;
+}
+.mast nav button:hover,
+.mast nav button[aria-current="page"] {
+  background: #2b3649;
+  color: #fff;
+}
+.mast nav[hidden] { display: none; }
+.status-cluster .board-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.board-source { margin-top: 16px; }
+.board-source summary { cursor: pointer; }
+.board-source ul { margin: 10px 0 0; padding-inline-start: 18px; }
+.board-state-action { margin-top: 8px; }
+.board-warnings { margin: 0 0 14px; }
+.board-warnings ul { margin: 6px 0 0; padding-inline-start: 18px; }
+.empty-chart { padding: 12px; }
+@media (max-width: 1180px) {
+  .mast { grid-template-columns: 1fr auto; }
+  .mast nav { display: none; }
+}

@@ -1,0 +1,1 @@
+Open Hithink Finance from the left sidebar to show the Workbench alongside chat. Connect with your Hithink Finance account or an API key in Settings, and explore static examples and live dashboards in the gallery. Ask for financial data and charts in chat, or have the agent build and save a dashboard you can reopen in the Workbench.

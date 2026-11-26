@@ -95,7 +95,7 @@ export function registerSkillsCommands(
     )
     .addHelpText(
       'after',
-      '\nExamples:\n  hithink-finance skills sync --agent claude-code\n  hithink-finance skills sync --agent workbuddy --agent qclaw\n  hithink-finance skills sync --agent auto\n  hithink-finance skills sync --agent cursor --directory <absolute-path> --copy',
+      '\nExamples:\n  hithink-finance skills sync --agent claude-code\n  hithink-finance skills sync --agent dsh\n  hithink-finance skills sync --agent auto\n  hithink-finance skills sync --agent cursor --directory <absolute-path> --copy',
     )
     .action(
       async (options: {

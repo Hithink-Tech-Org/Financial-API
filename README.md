@@ -3,7 +3,7 @@
 [![Website](https://img.shields.io/badge/官网-fuyao.aicubes.cn-0b66ff)](https://fuyao.aicubes.cn/)
 [![Docs](https://img.shields.io/badge/API%20Docs-同花顺金融数据服务-0f766e)](https://fuyao.aicubes.cn/docs/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab)](python/pyproject.toml)
-[![Node.js](https://img.shields.io/badge/Node.js-22.12%2B-339933)](hithink-finance-cli/package.json)
+[![Node.js](https://img.shields.io/badge/Node.js-22.13%2B%20%2822.x%29%20%7C%2024%2B-339933)](hithink-finance-cli/package.json)
 
 **同花顺金融数据服务（hithink-finance）** 是由同花顺官方提供和维护的 A 股金融数据服务，面向 AI Agent、量化研究者和应用开发者。
 
@@ -19,11 +19,18 @@
 
 > API、MCP、CLI、Python SDK 和 Agent Skill 适合自主接入；同花顺AI客户端已接入当前数据源，金融数据与分析能力已内置，打开客户端即可使用。
 
+## DeepSeek Harness 插件
+
+使用 **DeepSeek Harness 插件 0.1.0**，可以通过对话查行情和财报、看交互图表，或从官方案例出发，制作可以刷新、回访和修改的金融看板。
+
+[下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [图文功能说明](dsh-plugins/hithink-finance/README.md#功能说明) · [安装](dsh-plugins/hithink-finance/README.md#安装) · [快速开始](dsh-plugins/hithink-finance/README.md#快速开始) · [动态看板案例](dsh-plugins/hithink-finance/README.md#从动态案例开始)
+
 ## 选择接入方式
 
 | 使用场景 | 推荐方式 | 说明 |
 | --- | --- | --- |
 | 让 AI Agent 自动查询和分析金融数据 | [CLI 内置 Skills](hithink-finance-cli/README.md#agent-skill-lifecycle) | 根据各内置 Skill 的 description 直接选择业务域 |
+| 在 DeepSeek Harness 对话中取数、看图和制作看板 | [DSH 插件](dsh-plugins/hithink-finance/README.md) | 通过同花顺账号或 API Key 连接数据，浏览官方案例并保存自制看板 |
 | 在终端、Agent 或自动化任务中统一取数和导出 | [CLI](hithink-finance-cli/README.md) | 整合远端取数、本地 DuckDB、认证和结构化输出 |
 | 在 Chat Bot 或 IDE 中直接调用 | [MCP](docs/mcp.md) | 配置托管服务和 API Key 后在对话中使用 |
 | 接入网站、App、后台服务或其他语言 | [REST API](docs/api/README.md) | 标准 HTTP 接口，适合自定义集成 |
@@ -55,6 +62,8 @@ Agent 和终端任务优先使用 CLI 及其内置 Skills；REST 文档与 HTTP 
 | 全市场数据文件 | 下载全量或增量日 K、公司行动等标准数据文件 | CLI / Market Dumps |
 | 本地 DuckDB | 初始化、同步、校验、修复、SQL 查询和导出 | CLI / marketdb |
 | 端内专用数据与分析 | 在客户端使用资金流向、高频动向和期货期权专业数据 | [同花顺AI客户端](https://lumi.10jqka.com.cn/?channel=Hithink-API) |
+
+基金业绩支持批量查询最新净值、区间收益和回撤，每次最多 20 只基金。[基金业绩接口](docs/api/fund/fund-performance.md)
 
 当前公开方式不提供分钟 K、tick、Level-2、港股或美股行情、宏观数据、新闻公告原文、研报原文、基金申赎交易和投资推荐。标记为“端内专用”的能力已内置于同花顺AI客户端，不通过公开 API、MCP、CLI 或 Python SDK 提供。数据权限及实际可访问能力以官网和账号授权为准；请求未支持的数据时，不使用模拟数据或静态示例冒充真实结果。
 

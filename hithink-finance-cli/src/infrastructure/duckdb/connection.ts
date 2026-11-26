@@ -106,14 +106,20 @@ export interface OpenDatabase {
  * @param databasePath - 数据库文件路径（相对或绝对）
  * @returns 打开的数据库对象
  */
-export async function openDatabase(databasePath: string): Promise<OpenDatabase> {
+export async function openDatabase(
+  databasePath: string,
+  { readOnly = false } = {},
+): Promise<OpenDatabase> {
   const { DuckDBInstance } = await import('@duckdb/node-api');
   // 确保使用绝对路径，避免工作目录变化导致路径错误
   const absolutePath = path.resolve(databasePath);
   // 自动创建数据库文件所在目录
-  await mkdir(path.dirname(absolutePath), { recursive: true });
+  if (!readOnly) await mkdir(path.dirname(absolutePath), { recursive: true });
   // 创建 DuckDB 实例（进程内嵌入式数据库引擎）
-  const instance = await DuckDBInstance.create(absolutePath, duckDbRuntimeOptions());
+  const instance = await DuckDBInstance.create(absolutePath, {
+    ...duckDbRuntimeOptions(),
+    ...(readOnly && { access_mode: 'READ_ONLY' }),
+  });
   // 建立数据库连接；连接失败也要关闭已创建的 native 实例。
   let connection: DuckDBConnection;
   try {

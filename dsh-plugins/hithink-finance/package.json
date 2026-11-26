@@ -1,0 +1,68 @@
+{
+  "name": "@hithink-tech/dsh-finance",
+  "version": "0.1.0",
+  "description": "Hithink Finance workbench, pages and charts for DeepSeek Harness",
+  "icon": "./assets/icon.png",
+  "type": "module",
+  "main": "./src/host/index.js",
+  "exports": {
+    ".": "./src/host/index.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "assets/icon.png",
+    "cordis.patch.yml",
+    "dist/client.js",
+    "dist/third-party/",
+    "dist/workbench-samples/",
+    "locale/",
+    "skills/",
+    "src/host/",
+    "src/presentation/"
+  ],
+  "scripts": {
+    "build": "node scripts/sync-workbench-samples.mjs && node scripts/build-client.mjs",
+    "pretest": "node scripts/sync-workbench-samples.mjs",
+    "test": "node --test",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.1"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "@hithink-tech/hithink-finance-cli": "latest"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1 || ^0.2.1-alpha.1 || ^0.2.2-alpha.2 || ^0.2.3-alpha.1",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.0-rc.1 || ^0.2.1-alpha.1 || ^0.2.2-alpha.2 || ^0.2.3-alpha.1"
+  },
+  "devDependencies": {
+    "echarts": "6.1.0",
+    "esbuild": "0.27.3",
+    "lightweight-charts": "5.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "homepage": "https://fuyao.aicubes.cn/docs/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hithink-Tech-Org/Financial-API.git",
+    "directory": "dsh-plugins/hithink-finance"
+  },
+  "bugs": "https://github.com/Hithink-Tech-Org/Financial-API/issues"
+}

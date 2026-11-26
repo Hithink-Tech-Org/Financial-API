@@ -18,27 +18,28 @@ description: '通过 hithink-finance CLI 查询基金档案、公司和经理、
 
 ## 快速决策
 
-| 用户意图                       | 首选命令 / 路由                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------ |
-| 基金档案                       | `fund profile`                                                                       |
-| 基金持仓                       | `fund holdings`                                                                      |
-| 基金净值                       | `fund nav`                                                                           |
-| 基金区间收益                   | `fund returns`                                                                       |
-| 基金持有人结构                 | `fund holders`                                                                       |
-| 基金在线回测                   | 先用 `fund backtest-indicators` 获取指标规则，再调用 `fund backtest-result`          |
-| 基金画线/表格指标              | `fund indicators-line` / `fund indicators-table`                                     |
-| QDII 额度汇总/列表             | `fund quota-summary` / `fund quota-list`                                             |
-| 基金公司详情                   | `fund company-detail`                                                                |
-| 基金经理资料/经历/业绩/风格    | `fund manager-detail/manager-experience/manager-performance/manager-style`           |
-| 基金财务指标/利润表/资产负债表 | `fund financial-indicators/income-statements/balance-sheets`                         |
-| 基金诊断                       | `fund diagnostics`                                                                   |
-| 基金资讯                       | `fund news`                                                                          |
-| 在售或待售基金                 | `fund offerings`                                                                     |
-| 历史股票/债券持仓              | 先用对应 `report-dates`，再调用 `stock-history` 或 `bond-history`                    |
-| ETF/LOF 快照                   | `fund snapshot`                                                                      |
-| ETF 历史日线                   | `fund history`                                                                       |
-| 多只场内基金行情               | `fund snapshot --thscode <CSV>` 最多 100 个原始代码；`fund history-batch` 最多 10 个 |
-| 基金代码或名称搜索             | 切到 `hithink-finance-symbol`                                                        |
+| 用户意图                             | 首选命令 / 路由                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| 基金档案                             | `fund profile`                                                                       |
+| 基金持仓                             | `fund holdings`                                                                      |
+| 基金净值                             | `fund nav`                                                                           |
+| 最新单位净值与复权净值（最多 20 只） | `fund nav-snapshot --thscodes <codes>`                                               |
+| 基金区间收益与回撤（单只或批量）     | `fund returns`、`fund drawdowns`                                                     |
+| 基金持有人结构                       | `fund holders`                                                                       |
+| 基金在线回测                         | 先用 `fund backtest-indicators` 获取指标规则，再调用 `fund backtest-result`          |
+| 基金画线/表格指标                    | `fund indicators-line` / `fund indicators-table`                                     |
+| QDII 额度汇总/列表                   | `fund quota-summary` / `fund quota-list`                                             |
+| 基金公司详情                         | `fund company-detail`                                                                |
+| 基金经理资料/经历/业绩/风格          | `fund manager-detail/manager-experience/manager-performance/manager-style`           |
+| 基金财务指标/利润表/资产负债表       | `fund financial-indicators/income-statements/balance-sheets`                         |
+| 基金诊断                             | `fund diagnostics`                                                                   |
+| 基金资讯                             | `fund news`                                                                          |
+| 在售或待售基金                       | `fund offerings`                                                                     |
+| 历史股票/债券持仓                    | 先用对应 `report-dates`，再调用 `stock-history` 或 `bond-history`                    |
+| ETF/LOF 快照                         | `fund snapshot`                                                                      |
+| ETF 历史日线                         | `fund history`                                                                       |
+| 多只场内基金行情                     | `fund snapshot --thscode <CSV>` 最多 100 个原始代码；`fund history-batch` 最多 10 个 |
+| 基金代码或名称搜索                   | 切到 `hithink-finance-symbol`                                                        |
 
 ## Shortcuts
 
@@ -69,6 +70,7 @@ description: '通过 hithink-finance CLI 查询基金档案、公司和经理、
 | [fund manager-performance](references/fund-manager-performance.md)   | Query fund manager performance                                                                               |
 | [fund manager-style](references/fund-manager-style.md)               | Query fund manager investment style                                                                          |
 | [fund nav](references/fund-nav.md)                                   | Query fund net asset value series                                                                            |
+| [fund nav-snapshot](references/fund-nav-snapshot.md)                 | Query latest unit and adjusted fund NAV                                                                      |
 | [fund news](references/fund-news.md)                                 | Query cursor-paginated public fund article metadata with has_more and no total                               |
 | [fund offerings](references/fund-offerings.md)                       | Query active or upcoming fund offerings                                                                      |
 | [fund profile](references/fund-profile.md)                           | Query fund profile detail                                                                                    |

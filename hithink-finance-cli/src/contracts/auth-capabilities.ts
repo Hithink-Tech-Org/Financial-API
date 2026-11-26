@@ -1,4 +1,11 @@
-export const authCapabilities = [
+import type { LocalCapabilityDescriptor, LocalCapabilityOption } from './local-capabilities.js';
+
+export interface AuthCapability extends LocalCapabilityDescriptor {
+  options: readonly (LocalCapabilityOption & { choices?: readonly string[] })[];
+  arguments?: readonly { name: string; required: boolean; choices: readonly string[] }[];
+}
+
+export const authCapabilities: readonly AuthCapability[] = [
   {
     id: 'auth.login',
     command: ['auth', 'login'],
@@ -37,4 +44,4 @@ export const authCapabilities = [
     description: 'Import previous credentials into the shared file',
     options: [{ flags: '--legacy-profile <name>' }],
   },
-] as const;
+];

@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test, vi } from 'vitest';
@@ -56,6 +56,7 @@ test('chooses FULL for an empty or long-stale database', () => {
 
 test('re-signs once after a transient dump failure and downloads atomically', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'hithink-dump-'));
+  const apiKey = randomUUID();
   const fetch = vi
     .fn<typeof globalThis.fetch>()
     .mockResolvedValueOnce(new Response('{}', { status: 503 }))
@@ -63,14 +64,16 @@ test('re-signs once after a transient dump failure and downloads atomically', as
       Response.json({
         code: 0,
         message: 'success',
-        data: { presigned_url: 'https://objects.example/releases/r1.parquet?signature=x' },
+        data: {
+          presigned_url: `https://objects.example/releases/r1.parquet?signature=${randomUUID()}`,
+        },
       }),
     )
     .mockResolvedValueOnce(new Response('parquet-bytes'));
   try {
     const result = await fetchFuyaoDump({
       baseUrl: 'https://fuyao.example',
-      auth: { method: 'api-key', apiKey: 'secret', source: 'explicit', profile: 'default' },
+      auth: { method: 'api-key', apiKey, source: 'explicit', profile: 'default' },
       kind: 'daily-k',
       cacheDir: root,
       fetch,
@@ -87,7 +90,7 @@ test('re-signs once after a transient dump failure and downloads atomically', as
       'Hithink-Finance-CLI',
     );
     expect(fetch.mock.calls[2]?.[1]).toBeUndefined();
-    expect(String(fetch.mock.calls[1]?.[0])).not.toContain('secret');
+    expect(String(fetch.mock.calls[1]?.[0])).not.toContain(apiKey);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -102,14 +105,16 @@ test('reports byte progress from the streamed dump response', async () => {
       Response.json({
         code: 0,
         message: 'success',
-        data: { presigned_url: 'https://objects.example/releases/r2.parquet?signature=x' },
+        data: {
+          presigned_url: `https://objects.example/releases/r2.parquet?signature=${randomUUID()}`,
+        },
       }),
     )
     .mockResolvedValueOnce(new Response('parquet-bytes', { headers: { 'content-length': '13' } }));
   try {
     await fetchFuyaoDump({
       baseUrl: 'https://fuyao.example',
-      auth: { method: 'api-key', apiKey: 'secret', source: 'explicit', profile: 'default' },
+      auth: { method: 'api-key', apiKey: randomUUID(), source: 'explicit', profile: 'default' },
       kind: 'daily-k',
       cacheDir: root,
       fetch,
@@ -148,6 +153,7 @@ test('finishes factors, release metadata, and quality checks before reporting la
   const eventsPath = path.join(root, 'adjustment-source.parquet');
   const controller = new AbortController();
   const qualityChecked = { value: false };
+  const apiKey = randomUUID();
   try {
     await fixture.connection.run(
       `COPY (SELECT * FROM (VALUES ('000001.SZ', DATE '2025-01-02', 10.0, 10.5, 9.5, 10.0, NULL::DOUBLE, 100.0, 1000.0), ('000001.SZ', DATE '2025-01-03', 9.5, 10.0, 9.0, 9.5, 10.0, 120.0, 1140.0)) AS t(thscode,date,open,high,low,"close",prev_close,volume,amount)) TO '${klinePath.replaceAll("'", "''")}' (FORMAT PARQUET)`,
@@ -180,7 +186,7 @@ test('finishes factors, release metadata, and quality checks before reporting la
     await expect(
       syncDataFromFuyao(observeCancelledImport(target.connection, controller, qualityChecked), {
         baseUrl: 'https://fuyao.example',
-        auth: { method: 'api-key', apiKey: 'test-key', source: 'explicit', profile: 'default' },
+        auth: { method: 'api-key', apiKey, source: 'explicit', profile: 'default' },
         cacheDir: path.join(root, 'cache'),
         now: new Date('2025-01-04T00:00:00Z'),
         signal: controller.signal,
@@ -192,6 +198,16 @@ test('finishes factors, release metadata, and quality checks before reporting la
     );
     expect(state.getRowsJson()[0]).toEqual(['2', '2', 'kline-r2/parquet']);
     expect(qualityChecked.value).toBe(true);
+
+    await target.connection.run("DELETE FROM raw_kline_daily WHERE date = DATE '2025-01-03'");
+    const resynced = await syncDataFromFuyao(target.connection, {
+      baseUrl: 'https://fuyao.example',
+      auth: { method: 'api-key', apiKey, source: 'explicit', profile: 'default' },
+      cacheDir: path.join(root, 'cache'),
+      now: new Date('2025-02-01T00:00:00Z'),
+    });
+    expect(resynced.decision).toBe('FULL');
+    expect(resynced.factorRows).toBe(2);
   } finally {
     vi.unstubAllGlobals();
     fixture.close();

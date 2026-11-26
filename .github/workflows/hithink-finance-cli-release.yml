@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  actions: read
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -28,26 +29,40 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: npm ci --ignore-scripts
       - name: Verify immutable tag and package version
-        run: node -e "const p=require('./package.json'); if (process.env.RELEASE_TAG !== 'v'+p.version) { console.error('tag/version mismatch'); process.exit(1) }"
-      - run: npm run verify
-      - run: node scripts/check-license.mjs
-      - run: npm pack --dry-run --ignore-scripts
-      - name: Publish once with provenance
+        run: node scripts/validate-release.mjs ref
+      - name: Check publication state
+        id: state
         shell: bash
         run: |
-          version="$(node -p "require('./package.json').version")"
-          if npm view "@hithink-tech/hithink-finance-cli@$version" version --json > existing-version.json 2>/dev/null; then
-            existing="$(node -p "require('./existing-version.json')")"
-            if [ "$existing" != "$version" ]; then
-              echo "Registry returned an unexpected version for $version: $existing" >&2
-              exit 1
-            fi
-            echo "@hithink-tech/hithink-finance-cli@$version is already published; skipping duplicate publish."
-          else
-            npm publish --ignore-scripts --provenance --access public --tag ${{ contains(inputs.tag || github.ref_name, '-') && 'next' || 'latest' }}
-          fi
+          npm view @hithink-tech/hithink-finance-cli versions --registry https://registry.npmjs.org --json > registry-versions.json
+          node scripts/validate-release.mjs registry registry-versions.json >> "$GITHUB_OUTPUT"
+      - name: Reuse successful validation for this SHA
+        if: steps.state.outputs.published != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/hithink-finance-cli-ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success -F per_page=1 > validation-run.json
+          node scripts/validate-release.mjs ci validation-run.json
+      - if: steps.state.outputs.published != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.state.outputs.published != 'true'
+        run: npm run build
+      - if: steps.state.outputs.published != 'true'
+        run: node scripts/check-license.mjs
+      - name: Pack and verify the installed artifact
+        if: steps.state.outputs.published != 'true'
+        id: package
+        run: npm run verify:release-package -- "$RUNNER_TEMP/hithink-finance-release"
+      - name: Publish once with provenance
+        if: steps.state.outputs.published != 'true'
+        env:
+          RELEASE_TARBALL: ${{ steps.package.outputs.tarball }}
+        shell: bash
+        run: |
+          npm publish "$RELEASE_TARBALL" --ignore-scripts --provenance --access public --tag ${{ contains(inputs.tag || github.ref_name, '-') && 'next' || 'latest' }}
   release:
     needs: publish
     runs-on: ubuntu-latest

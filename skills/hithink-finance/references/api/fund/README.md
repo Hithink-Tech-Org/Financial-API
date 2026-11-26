@@ -49,6 +49,7 @@ ETF 成交价格选择快照或历史日线；基金净值进入净值与业绩�
 | 需求 / 文档 | 接口或工具 | 使用范围 |
 | --- | --- | --- |
 | [基金净值](fund-performance.md#performance-nav) | `GET /api/fund/performance/nav` | 公开 |
+| [基金最新净值快照](fund-performance.md#performance-nav-snapshot) | `GET /api/fund/performance/nav-snapshot` | 公开 |
 | [基金区间收益](fund-performance.md#performance-returns) | `GET /api/fund/performance/returns` | 公开 |
 | [基金历史业绩指标](fund-performance.md#performance-indicators-historical) | `GET /api/fund/performance/indicators-historical` | 公开 |
 | [基金最大回撤](fund-performance.md#performance-drawdowns) | `GET /api/fund/performance/drawdowns` | 公开 |

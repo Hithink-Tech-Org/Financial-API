@@ -1,29 +1,9 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execa } from 'execa';
 import { expect, test } from 'vitest';
-
-async function waitForPid(pidFile: string): Promise<number> {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    try {
-      return Number(await readFile(pidFile, 'utf8'));
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-  }
-  throw new Error('Timed out waiting for the blocking child process.');
-}
-
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { waitForPid, waitForProcessToStop } from '../fixtures/process-lifecycle.js';
 
 test.skipIf(process.platform === 'win32')(
   'SIGTERM interrupts a real update child and exits with signal semantics',
@@ -64,7 +44,7 @@ test.skipIf(process.platform === 'win32')(
 
       expect(result.exitCode).toBe(143);
       expect(result.timedOut).toBe(false);
-      expect(processExists(childPid)).toBe(false);
+      expect(await waitForProcessToStop(childPid)).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

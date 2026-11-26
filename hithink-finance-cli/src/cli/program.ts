@@ -17,6 +17,7 @@ import { localizeText, translate } from './i18n.js';
 import { successEnvelope } from '../contracts/envelope.js';
 import { CliError } from '../contracts/errors.js';
 import type { CommandDescriptor } from '../contracts/registry.js';
+import type { AuthCapability } from '../contracts/auth-capabilities.js';
 import { renderResult } from '../output/renderer.js';
 import { registerAuthCommands } from '../commands/auth/index.js';
 import type { GlobalAuthProvider } from '../infrastructure/credentials/global-provider.js';
@@ -72,6 +73,7 @@ export interface ProgramDependencies {
   /** API key authentication provider (keyring + env).
    *  API 密钥认证提供者（keyring + 环境变量）。 */
   authProvider: GlobalAuthProvider;
+  authCapabilities?: readonly AuthCapability[];
   /** Base URL for the Fuyao upstream API.
    *  拂晓上游 API 的基础 URL。 */
   fuyaoBaseUrl: string;
@@ -257,8 +259,8 @@ export function createProgram(
   registerOptionsCommands(program, context, remoteDependencies);
   registerIpoCommands(program, context, remoteDependencies);
   registerNewsCommands(program, context, remoteDependencies);
-  registerCapabilitiesCommand(program, context);
-  registerSchemaCommand(program, context);
+  registerCapabilitiesCommand(program, context, dependencies.authCapabilities);
+  registerSchemaCommand(program, context, dependencies.authCapabilities);
   registerSkillsCommands(program, context, dependencies.packageRoot);
   registerUpdateCommand(program, context, metadata, dependencies);
   registerUninstallCommand(program, context, metadata, dependencies);

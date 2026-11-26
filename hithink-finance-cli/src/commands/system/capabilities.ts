@@ -11,7 +11,7 @@ import type { CliContext } from '../../cli/context.js';
 import { localizeText } from '../../cli/i18n.js';
 import { remoteCapabilities } from '../../contracts/remote-capabilities.js';
 import { localCapabilities } from '../../contracts/local-capabilities.js';
-import { authCapabilities } from '../../contracts/auth-capabilities.js';
+import { authCapabilities, type AuthCapability } from '../../contracts/auth-capabilities.js';
 import { successEnvelope } from '../../contracts/envelope.js';
 import { renderResult } from '../../output/renderer.js';
 
@@ -25,7 +25,11 @@ import { renderResult } from '../../output/renderer.js';
  * @param program - Commander 根程序实例
  * @param context - CLI 上下文
  */
-export function registerCapabilitiesCommand(program: Command, context: CliContext): void {
+export function registerCapabilitiesCommand(
+  program: Command,
+  context: CliContext,
+  authentication: readonly AuthCapability[] = authCapabilities,
+): void {
   program
     .command('capabilities')
     .description(localizeText(context.language, 'List machine-readable command capabilities'))
@@ -45,7 +49,7 @@ export function registerCapabilitiesCommand(program: Command, context: CliContex
             })),
             // 本地能力列表
             ...localCapabilities.map((item) => ({ ...item, source: 'local' })),
-            ...authCapabilities.map((item) => ({ ...item, source: 'authentication' })),
+            ...authentication.map((item) => ({ ...item, source: 'authentication' })),
           ],
           { requestId: context.requestId },
         ),

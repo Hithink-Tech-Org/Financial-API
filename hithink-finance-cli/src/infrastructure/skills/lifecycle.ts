@@ -19,6 +19,7 @@ import {
   rmdir,
   stat,
   symlink,
+  unlink,
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +43,7 @@ export const supportedSkillAgents = [
   'trae-cn',
   'workbuddy',
   'qclaw',
+  'dsh',
 ] as const;
 export type SkillAgent = (typeof supportedSkillAgents)[number];
 type Delivery = 'link' | 'copy';
@@ -58,6 +60,14 @@ interface TargetRecord {
   delivery: Delivery;
   /** Manifest from the last successful target sync; it defines our ownership boundary. */
   manifest?: ManagedSkillManifest;
+  /** DSH homes can change between processes using the same CLI configuration. */
+  installations?: InstalledTarget[];
+}
+
+interface InstalledTarget {
+  directory: string;
+  delivery: Delivery;
+  manifest: ManagedSkillManifest;
 }
 
 interface LifecycleState {
@@ -156,6 +166,17 @@ function isManagedManifest(value: unknown): value is ManagedSkillManifest {
   );
 }
 
+function isInstalledTarget(value: unknown): value is InstalledTarget {
+  if (value === null || typeof value !== 'object') return false;
+  const candidate = value as Partial<InstalledTarget>;
+  return (
+    typeof candidate.directory === 'string' &&
+    path.isAbsolute(candidate.directory) &&
+    (candidate.delivery === 'link' || candidate.delivery === 'copy') &&
+    isManagedManifest(candidate.manifest)
+  );
+}
+
 function asState(value: unknown): LifecycleState | undefined {
   if (value === null || typeof value !== 'object') return undefined;
   const candidate = value as Partial<LifecycleState>;
@@ -179,6 +200,11 @@ function asState(value: unknown): LifecycleState | undefined {
     const target = record as Partial<TargetRecord>;
     if (!['link', 'copy'].includes(target.delivery ?? '')) return undefined;
     if (target.manifest !== undefined && !isManagedManifest(target.manifest)) return undefined;
+    if (
+      target.installations !== undefined &&
+      (!Array.isArray(target.installations) || !target.installations.every(isInstalledTarget))
+    )
+      return undefined;
     if (
       target.directory !== undefined &&
       (typeof target.directory !== 'string' || !path.isAbsolute(target.directory))
@@ -233,6 +259,14 @@ function clientRoot(agent: SkillAgent, homeDir: string): string {
       return path.join(homeDir, '.workbuddy');
     case 'qclaw':
       return path.join(homeDir, '.qclaw');
+    case 'dsh': {
+      const configured = process.env.DSH_HOME;
+      if (configured === undefined || configured.trim().length === 0)
+        return path.join(homeDir, '.dsh');
+      if (configured === '~' || configured.startsWith('~/') || configured.startsWith('~\\'))
+        return path.join(homeDir, configured.slice(2));
+      return path.resolve(configured);
+    }
   }
 }
 
@@ -265,6 +299,17 @@ function selected(state: LifecycleState, detectedAgents: readonly SkillAgent[]):
 
 function targetDirectory(state: LifecycleState, agent: SkillAgent, homeDir: string): string {
   return state.targets[agent]?.directory ?? defaultSkillsRoot(agent, homeDir);
+}
+
+function targetTrustedRoot(
+  agent: SkillAgent,
+  directory: string,
+  homeDir: string,
+  configuredDirectory: string | undefined,
+): string {
+  const dshOverride =
+    agent === 'dsh' && path.relative(path.join(homeDir, '.dsh', 'skills'), directory) !== '';
+  return configuredDirectory !== undefined || dshOverride ? path.parse(directory).root : homeDir;
 }
 
 async function readManifest(packageRoot: string): Promise<ManagedSkillManifest> {
@@ -394,7 +439,9 @@ async function publishContent(
 async function removeOwnedLink(destination: string, source: string): Promise<boolean> {
   const ownership = await linkOwnership(destination, source);
   if (ownership === 'owned') {
-    await rm(destination, { recursive: true, force: true });
+    await unlink(destination).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    });
   }
   return ownership !== 'conflict';
 }
@@ -460,33 +507,41 @@ async function syncTarget(
   homeDir: string,
   source: string,
   manifest: ManagedSkillManifest,
-): Promise<{ status: LifecycleTargetStatus; record?: TargetRecord }> {
+): Promise<{ status: LifecycleTargetStatus; record?: TargetRecord; residual?: InstalledTarget }> {
   const record = state.targets[agent] ?? { delivery: 'link' as const };
   const directory = targetDirectory(state, agent, homeDir);
-  const trustedRoot = record.directory === undefined ? homeDir : path.parse(directory).root;
+  const trustedRoot = targetTrustedRoot(agent, directory, homeDir, record.directory);
+  const createdLinks: string[] = [];
   try {
     await assertTargetPathNotLinked(directory, trustedRoot);
     await mkdir(directory, { recursive: true });
     await assertTargetPathNotLinked(directory, trustedRoot);
     if (record.delivery === 'copy') {
-      const previous = record.manifest;
+      const previous =
+        agent === 'dsh' || record.installations !== undefined
+          ? record.installations?.find((entry) => path.relative(entry.directory, directory) === '')
+              ?.manifest
+          : record.manifest;
       const skillNames = unique(Object.keys(manifest.files).map((file) => file.split('/')[0]!));
-      if (previous === undefined) {
-        for (const name of skillNames) {
-          try {
-            await lstat(path.join(directory, name));
-            return {
-              status: {
-                name: agent,
-                directory,
-                delivery: 'copy',
-                status: 'conflict',
-                detail: `User-owned path exists: ${path.join(directory, name)}`,
-              },
-            };
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          }
+      const managedNames = new Set(
+        Object.keys(previous?.files ?? {}).map((file) => file.split('/')[0]!),
+      );
+      for (const name of skillNames) {
+        if (managedNames.has(name)) continue;
+        const destination = path.join(directory, name);
+        try {
+          await lstat(destination);
+          return {
+            status: {
+              name: agent,
+              directory,
+              delivery: 'copy',
+              status: 'conflict',
+              detail: `User-owned path exists: ${destination}`,
+            },
+          };
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         }
       }
       const files = [
@@ -530,42 +585,69 @@ async function syncTarget(
             'Legacy CLI-managed copy has been modified; use --copy to retain it or resolve the conflict.',
         },
       };
+    const missing: string[] = [];
     for (const name of unique(Object.keys(manifest.files).map((file) => file.split('/')[0]!))) {
       const destination = path.join(directory, name);
-      const expected = path.join(source, name);
-      const removed = await removeOwnedLink(destination, expected);
-      if (!removed) {
-        try {
-          await lstat(destination);
-          return {
-            status: {
-              name: agent,
-              directory,
-              delivery: 'link',
-              status: 'conflict',
-              detail: `User-owned path exists: ${destination}`,
-            },
-          };
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-      }
-      await symlink(expected, destination, process.platform === 'win32' ? 'junction' : 'dir');
+      const ownership = await linkOwnership(destination, path.join(source, name));
+      if (ownership === 'conflict')
+        return {
+          status: {
+            name: agent,
+            directory,
+            delivery: 'link',
+            status: 'conflict',
+            detail: `User-owned path exists: ${destination}`,
+          },
+        };
+      if (ownership === 'missing') missing.push(name);
     }
-    await verifyContent(directory, manifest);
+    for (const name of missing) {
+      await symlink(
+        path.join(source, name),
+        path.join(directory, name),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      createdLinks.push(name);
+    }
+    await verifyTarget(directory, 'link', source, manifest);
     return {
       status: { name: agent, directory, delivery: 'link', status: 'ready' },
       record: { ...record, manifest },
     };
   } catch (error) {
+    const remaining = new Set<string>();
+    for (const name of createdLinks.reverse()) {
+      try {
+        await assertTargetPathNotLinked(directory, trustedRoot);
+        await removeOwnedLink(path.join(directory, name), path.join(source, name));
+      } catch {
+        remaining.add(name);
+      }
+    }
+    let detail = error instanceof Error ? error.message : String(error);
+    let residual: InstalledTarget | undefined;
+    if (remaining.size > 0) {
+      detail += ` Could not roll back managed links: ${[...remaining].join(', ')}.`;
+      residual = {
+        directory,
+        delivery: 'link',
+        manifest: {
+          ...manifest,
+          files: Object.fromEntries(
+            Object.entries(manifest.files).filter(([file]) => remaining.has(file.split('/')[0]!)),
+          ),
+        },
+      };
+    }
     return {
       status: {
         name: agent,
         directory,
         delivery: record.delivery,
         status: 'failed',
-        detail: error instanceof Error ? error.message : String(error),
+        detail,
       },
+      ...(residual === undefined ? {} : { residual }),
     };
   }
 }
@@ -627,6 +709,36 @@ function applySyncOptions(state: LifecycleState, options: LifecycleSyncOptions):
   return state;
 }
 
+function rememberInstallation(
+  record: TargetRecord,
+  fallbackDirectory: string,
+  installation: InstalledTarget,
+  partial = false,
+): TargetRecord {
+  const { manifest, installations, ...settings } = record;
+  const known =
+    installations ??
+    (manifest === undefined
+      ? []
+      : [{ directory: fallbackDirectory, delivery: record.delivery, manifest }]);
+  const retained = known.filter(
+    (entry) => path.relative(entry.directory, installation.directory) !== '',
+  );
+  if (partial) {
+    const previous = known.find(
+      (entry) => path.relative(entry.directory, installation.directory) === '',
+    );
+    installation = {
+      ...installation,
+      manifest: {
+        ...installation.manifest,
+        files: { ...previous?.manifest.files, ...installation.manifest.files },
+      },
+    };
+  }
+  return { ...settings, installations: [...retained, installation] };
+}
+
 export async function syncLifecycleSkills(
   packageRoot: string,
   paths: SkillsLifecyclePaths,
@@ -659,15 +771,79 @@ export async function syncLifecycleSkills(
       for (const agent of agents) {
         const result = await syncTarget(agent, state, homeDir, source, manifest);
         targets.push(result.status);
-        if (result.status.status === 'ready' && result.record !== undefined)
-          state.targets[agent] = result.record;
-        else if (previous.targets[agent] !== undefined)
-          state.targets[agent] = previous.targets[agent];
+        const previousRecord = previous.targets[agent];
+        if (result.record !== undefined) {
+          if (agent === 'dsh' || result.record.installations !== undefined) {
+            const { directory, delivery } = result.status;
+            state.targets[agent] = rememberInstallation(result.record, directory, {
+              directory,
+              delivery,
+              manifest,
+            });
+          } else {
+            state.targets[agent] = result.record;
+          }
+        } else if (result.residual !== undefined) {
+          state.targets[agent] = rememberInstallation(
+            previousRecord ?? state.targets[agent] ?? { delivery: 'link' },
+            targetDirectory(previous, agent, homeDir),
+            result.residual,
+            true,
+          );
+        } else if (previousRecord !== undefined) {
+          state.targets[agent] = previousRecord;
+        }
       }
       await writeState(paths, state);
       return { targets, failures: targets.filter((target) => target.status !== 'ready') };
     },
   );
+}
+
+async function removeTarget(
+  agent: SkillAgent,
+  target: TargetRecord & { directory: string },
+  source: string,
+  trustedRoot: string,
+): Promise<LifecycleTargetStatus | undefined> {
+  const { directory, delivery, manifest } = target;
+  const failure = (status: 'conflict' | 'failed', detail: string): LifecycleTargetStatus => ({
+    name: agent,
+    directory,
+    delivery,
+    status,
+    detail,
+  });
+  if (manifest === undefined)
+    return failure(
+      'conflict',
+      'The target has no CLI-managed ownership manifest; existing content is preserved.',
+    );
+  try {
+    await assertTargetPathNotLinked(directory, trustedRoot);
+    if (delivery === 'copy') {
+      await assertNoSymbolicLinks(directory, Object.keys(manifest.files));
+      if (!(await legacyManifestMatches(directory, manifest)))
+        return failure('conflict', 'CLI-managed copy was modified; existing content is preserved.');
+      await removeManagedSkills(directory, manifest);
+      await removeEmptyLegacyDirectories(directory, manifest);
+    } else {
+      const names = unique(Object.keys(manifest.files).map((file) => file.split('/')[0]!));
+      for (const name of names) {
+        const destination = path.join(directory, name);
+        if ((await linkOwnership(destination, path.join(source, name))) === 'conflict')
+          return failure('conflict', `User-owned path exists: ${destination}`);
+      }
+      for (const name of names)
+        await removeOwnedLink(path.join(directory, name), path.join(source, name));
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return failure(
+      /symbolic link|unexpected content/iu.test(detail) ? 'conflict' : 'failed',
+      detail,
+    );
+  }
 }
 
 export async function removeLifecycleSkills(
@@ -702,81 +878,30 @@ export async function removeLifecycleSkills(
       for (const agent of agents) {
         const record = state.targets[agent];
         if (record === undefined) continue;
-        const directory = targetDirectory(state, agent, homeDir);
-        if (record.manifest === undefined) {
-          failures.push({
-            name: agent,
-            directory,
-            delivery: record.delivery,
-            status: 'conflict',
-            detail:
-              'The target has no CLI-managed ownership manifest; existing content is preserved.',
-          });
-          continue;
-        }
-        try {
-          const trustedRoot = record.directory === undefined ? homeDir : path.parse(directory).root;
-          await assertTargetPathNotLinked(directory, trustedRoot);
-          if (record.delivery === 'copy') {
-            await assertNoSymbolicLinks(directory, Object.keys(record.manifest.files));
-            if (!(await legacyManifestMatches(directory, record.manifest))) {
-              failures.push({
-                name: agent,
-                directory,
-                delivery: record.delivery,
-                status: 'conflict',
-                detail: 'CLI-managed copy was modified; existing content is preserved.',
-              });
-              continue;
-            }
-            await removeManagedSkills(directory, record.manifest);
-            await removeEmptyLegacyDirectories(directory, record.manifest);
-          } else {
-            const names = unique(
-              Object.keys(record.manifest.files).map((file) => file.split('/')[0]!),
-            );
-            const conflict = (
-              await Promise.all(
-                names.map(async (name) => {
-                  const destination = path.join(directory, name);
-                  return {
-                    destination,
-                    ownership: await linkOwnership(
-                      destination,
-                      path.join(contentRoot(paths), name),
-                    ),
-                  };
-                }),
-              )
-            ).find((result) => result.ownership === 'conflict');
-            if (conflict !== undefined) {
-              failures.push({
-                name: agent,
-                directory,
-                delivery: record.delivery,
-                status: 'conflict',
-                detail: `User-owned path exists: ${conflict.destination}`,
-              });
-              continue;
-            }
-            for (const name of names)
-              await removeOwnedLink(
-                path.join(directory, name),
-                path.join(contentRoot(paths), name),
-              );
+        const targets = record.installations ?? [
+          { ...record, directory: targetDirectory(state, agent, homeDir) },
+        ];
+        const failedDirectories = new Set<string>();
+        for (const target of targets) {
+          const result = await removeTarget(
+            agent,
+            target,
+            contentRoot(paths),
+            targetTrustedRoot(agent, target.directory, homeDir, record.directory),
+          );
+          if (result !== undefined) {
+            failures.push(result);
+            failedDirectories.add(target.directory);
           }
+        }
+        if (failedDirectories.size === 0) {
           removed.push(agent);
           state.excluded = unique([...state.excluded, agent]);
           delete state.targets[agent];
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error);
-          failures.push({
-            name: agent,
-            directory,
-            delivery: record.delivery,
-            status: /symbolic link|unexpected content/iu.test(detail) ? 'conflict' : 'failed',
-            detail,
-          });
+        } else if (record.installations !== undefined) {
+          record.installations = record.installations.filter((entry) =>
+            failedDirectories.has(entry.directory),
+          );
         }
       }
       if (options.agents === undefined) state.mode = 'disabled';
@@ -809,41 +934,50 @@ export async function readSkillsLifecycleStatus(
   ]);
   const targets: LifecycleTargetStatus[] = [];
   for (const name of names) {
+    const record = state.targets[name];
     const directory = targetDirectory(state, name, homeDir);
-    const delivery = state.targets[name]?.delivery ?? 'link';
+    const delivery = record?.delivery ?? 'link';
     if (state.excluded.includes(name)) {
       targets.push({ name, directory, delivery, status: 'removed' });
       continue;
     }
-    if (state.targets[name]?.manifest === undefined) {
-      targets.push({
-        name,
-        directory,
-        delivery,
-        status: 'conflict',
-        detail: 'The target has no CLI-managed ownership manifest; existing content is preserved.',
-      });
-      continue;
-    }
-    try {
-      const trustedRoot =
-        state.targets[name]?.directory === undefined ? homeDir : path.parse(directory).root;
-      await assertTargetPathNotLinked(directory, trustedRoot);
-      await verifyTarget(directory, delivery, content, manifest);
-      targets.push({ name, directory, delivery, status: 'ready' });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      const conflict =
-        /managed directory link|symbolic link|unexpected content|does not match (?:the bundled )?manifest/iu.test(
+    const installations: Array<TargetRecord & { directory: string }> = [
+      ...(record?.installations ?? []),
+    ];
+    if (!installations.some((entry) => path.relative(entry.directory, directory) === ''))
+      installations.push({ ...record, directory, delivery });
+    for (const target of installations) {
+      const { directory, delivery } = target;
+      if (target.manifest === undefined) {
+        targets.push({
+          name,
+          directory,
+          delivery,
+          status: 'conflict',
+          detail:
+            'The target has no CLI-managed ownership manifest; existing content is preserved.',
+        });
+        continue;
+      }
+      try {
+        const trustedRoot = targetTrustedRoot(name, directory, homeDir, record?.directory);
+        await assertTargetPathNotLinked(directory, trustedRoot);
+        await verifyTarget(directory, delivery, content, manifest);
+        targets.push({ name, directory, delivery, status: 'ready' });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        const conflict =
+          /managed directory link|symbolic link|unexpected content|does not match (?:the bundled )?manifest/iu.test(
+            detail,
+          );
+        targets.push({
+          name,
+          directory,
+          delivery,
+          status: conflict ? 'conflict' : available ? 'missing' : 'waiting',
           detail,
-        );
-      targets.push({
-        name,
-        directory,
-        delivery,
-        status: conflict ? 'conflict' : available ? 'missing' : 'waiting',
-        detail,
-      });
+        });
+      }
     }
   }
   const targetsVerified =

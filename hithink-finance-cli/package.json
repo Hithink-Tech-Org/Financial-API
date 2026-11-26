@@ -1,6 +1,6 @@
 {
   "name": "@hithink-tech/hithink-finance-cli",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "hithink finance CLI for humans, automation, and AI agents",
   "type": "module",
   "bin": {
@@ -32,6 +32,7 @@
     "format:write": "prettier --write .",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test:built",
     "verify:auth-package": "node scripts/verify-auth-package.mjs",
+    "verify:release-package": "node scripts/verify-release-package.mjs",
     "prepublishOnly": "node scripts/check-license.mjs && npm run verify"
   },
   "engines": {

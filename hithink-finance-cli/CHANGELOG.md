@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.5 - 2026-11-26
+
+- 新增 `fund nav-snapshot`，每次最多查询 20 只基金的最新单位净值与复权净值。`fund returns` 和 `fund drawdowns` 支持每次传入最多 20 只基金，并保留单只查询方式。
+- 安装和升级时可自动将配套 Skills 同步到已检测的 DeepSeek Harness。也可执行 `hithink-finance skills sync --agent dsh`，支持 `DSH_HOME` 和自定义 Skills 目录。
 
 ## 0.2.4 - 2026-11-12
 

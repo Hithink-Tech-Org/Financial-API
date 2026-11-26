@@ -15,10 +15,10 @@ import type { AuthSession } from '../ports/auth-provider.js';
  *
  * ## syncDataFromFuyao 流程：
  * 1. applyMigrations — 确保 schema 最新
- * 2. 查询本地 max(date) 和上次 releaseId
+ * 2. 查询本地 max(date)
  * 3. 判断 dump kind（全量 daily-k / 增量 daily-k-10d）
  * 4. 拉取 kline + adjustment-factors 数据包
- * 5. 如 releaseId 未变 → SKIP 跳过
+ * 5. 以当前下载内容修复本地缺口并刷新公司行动
  * 6. 执行 import → 重建复权因子 → 校验 → 记录 _meta
  */
 export type SyncDecision = 'SKIP' | 'INCREMENTAL' | 'FULL';
@@ -109,12 +109,11 @@ async function scalar(connection: DuckDBConnection, sql: string): Promise<string
  *
  * ## 详细流程：
  * 1. 应用数据库迁移
- * 2. 读取本地 max(date) 和上次 releaseId
+ * 2. 读取本地 max(date)
  * 3. 计算滞后天数并决定 dump kind：
  *    - 无数据或滞后 > 14 天 → daily-k（全量）
  *    - 滞后 ≤ 14 天 → daily-k-10d（增量 10 天）
- * 4. 拉取 kline dump，检查 releaseId：
- *    - 与上次相同 → 跳过，返回 SKIP
+ * 4. 拉取 kline dump，以当前内容重新对齐已有记录
  * 5. 拉取 adjustment-factors dump
  * 6. 导入数据 → 重建复权因子
  * 7. 写入 _meta 记录（last_kline_release_id, last_sync_mode 等）
@@ -133,11 +132,6 @@ export async function syncDataFromFuyao(
   await applyMigrations(connection);
   // 步骤 2：查询本地最新数据日期
   const maxDate = await scalar(connection, 'SELECT max(date)::VARCHAR FROM raw_kline_daily');
-  // 查询上次同步的 kline release id
-  const previousRelease = await scalar(
-    connection,
-    "SELECT value FROM _meta WHERE key='last_kline_release_id'",
-  );
   // 计算滞后天数
   const now = options.now ?? new Date();
   const lagDays =
@@ -149,16 +143,7 @@ export async function syncDataFromFuyao(
   // 步骤 4：拉取 kline 数据包
   const kline = await fetchFuyaoDump({ ...options, kind });
   throwIfCancelled(options.signal);
-  // releaseId 未变更 → 跳过同步
-  if (previousRelease === kline.releaseId) {
-    return {
-      decision: 'SKIP',
-      releaseId: kline.releaseId,
-      factorRows: 0,
-      quality: await validateDatabase(connection),
-    };
-  }
-  // 步骤 5：拉取复权因子数据包
+  // 服务端可能复用下载路径。重复同步可导入更正并补齐本地缺失记录。
   const events = await fetchFuyaoDump({ ...options, kind: 'adjustment-factors' });
   throwIfCancelled(options.signal);
   // 步骤 6：确定同步模式并构造 batchId（时间戳，用于去重和追踪）

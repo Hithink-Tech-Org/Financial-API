@@ -14,7 +14,7 @@ import {
   type RemoteCapabilityDescriptor,
 } from '../../contracts/remote-capabilities.js';
 import { localCapabilities } from '../../contracts/local-capabilities.js';
-import { authCapabilities } from '../../contracts/auth-capabilities.js';
+import { authCapabilities, type AuthCapability } from '../../contracts/auth-capabilities.js';
 import { successEnvelope } from '../../contracts/envelope.js';
 import { CliError } from '../../contracts/errors.js';
 import { renderResult } from '../../output/renderer.js';
@@ -29,12 +29,16 @@ import { remoteOutputOptions, tableOutputOptions } from '../../contracts/output-
  * @param program - Commander 根程序实例
  * @param context - CLI 上下文
  */
-export function registerSchemaCommand(program: Command, context: CliContext): void {
+export function registerSchemaCommand(
+  program: Command,
+  context: CliContext,
+  authentication: readonly AuthCapability[] = authCapabilities,
+): void {
   program
     .command('schema <command>')
     .description(localizeText(context.language, 'Show a command contract'))
     .action(async (id: string) => {
-      const auth = authCapabilities.find((item) => item.id === id);
+      const auth = authentication.find((item) => item.id === id);
       if (auth) {
         await renderResult(
           successEnvelope(

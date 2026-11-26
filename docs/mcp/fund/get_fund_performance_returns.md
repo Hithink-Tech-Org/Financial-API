@@ -10,24 +10,23 @@
 
 ## 工具描述
 
-> 查询基金多区间收益率，并返回对应区间的同类平均、同类排名与参与排名总数。
-> 收益率为百分数原值，如 `8.88` 表示 `8.88%`。
+> 单查或批量查询区间收益、同类平均与排名。收益率为百分数原值。
 
 ## 参数
 
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `thscode` | string | 是 | — | 完整基金 thscode，必须保留市场后缀。 |
+| `thscode` | string | 否 | — | 单只基金的完整代码，与 `thscodes` 二选一。 |
+| `thscodes` | string | 否 | — | 1 至 20 个完整基金代码，用英文逗号分隔，与 `thscode` 二选一。 |
 
 ## 调用示例
 
 ```text
 工具：get_fund_performance_returns
 参数：
-  - thscode: "510300.SH"
+  - thscodes: "510300.SH,158001.SZ"
 ```
 
 ## 返回
 
-返回 `{ timestamp, item: [FundReturnsItem, ...] }`。字段含义见 REST 端点
-[基金区间收益](../../api/fund/fund-performance.md#performance-returns--基金区间收益)。
+通过 `data.item[]` 返回收益指标。批量每条携带 `thscode`，收益缺值时仍可返回有值的排名与总数。字段见 [基金区间收益](../../api/fund/fund-performance.md#performance-returns--基金区间收益)。

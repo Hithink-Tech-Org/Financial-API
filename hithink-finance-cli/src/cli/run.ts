@@ -5,6 +5,7 @@ import { CommanderError } from 'commander';
 import { createCliContext, inferCommand, optionValue, type OutputFormat } from './context.js';
 import { createProgram, commanderError, type PackageMetadata } from './program.js';
 import { errorEnvelope } from '../contracts/envelope.js';
+import type { AuthCapability } from '../contracts/auth-capabilities.js';
 import { internalError } from '../contracts/errors.js';
 import { renderResult } from '../output/renderer.js';
 import { createGlobalAuthProvider } from '../infrastructure/credentials/auth-factory.js';
@@ -22,6 +23,11 @@ export interface CommandRuntime {
   stdout?: NodeJS.WriteStream;
   stderr?: NodeJS.WriteStream;
   signal?: AbortSignal;
+  apiKey?: string;
+  authCapabilities?: readonly AuthCapability[];
+  /** Preserve upstream field names in embedded REST responses. */
+  preserveJson?: boolean;
+  compatibleHistory?: boolean;
 }
 
 export async function renderFailure(
@@ -81,7 +87,8 @@ export async function executeCommand(
     const baseUrl = env.HITHINK_FINANCE_FUYAO_BASE_URL ?? 'https://fuyao.aicubes.cn';
     const packageRoot = path.resolve(import.meta.dirname, '../..');
     const program = createProgram(metadata, context, {
-      authProvider: createGlobalAuthProvider(baseUrl, env),
+      authProvider: createGlobalAuthProvider(baseUrl, env, runtime.apiKey),
+      ...(runtime.authCapabilities && { authCapabilities: runtime.authCapabilities }),
       fuyaoBaseUrl: baseUrl,
       packageRoot,
       platformPaths: { ...paths, defaultDbPath: resolved.dbPath },

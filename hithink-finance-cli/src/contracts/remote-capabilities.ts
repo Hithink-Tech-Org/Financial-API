@@ -256,12 +256,14 @@ const valuationCodes = z
       .join(',');
   });
 
-const historyInput = z
+export const stockAdjustment = z.enum(['none', 'forward', 'backward']);
+
+export const stockHistoryInput = z
   .object({
     thscode: aShareCode,
     startMs: z.number().int().nonnegative(),
     endMs: z.number().int().nonnegative(),
-    adjust: z.enum(['none', 'forward', 'backward']).default('forward'),
+    adjust: stockAdjustment.default('forward'),
   })
   .strict()
   .refine((value) => value.endMs >= value.startMs, { message: 'end-ms must be >= start-ms' });
@@ -375,14 +377,45 @@ function financial(
   };
 }
 
+const fundPerformanceCodesOption: RemoteOptionDescriptor = {
+  flags: '--thscodes <codes>',
+  description: '1-20 comma-separated fund thscodes',
+  type: 'string',
+};
+
+function fundPerformance(
+  command: 'returns' | 'drawdowns',
+  description: string,
+  endpoint: string,
+): RemoteCapabilityDescriptor {
+  return {
+    id: `fund.${command}`,
+    command: ['fund', command],
+    description,
+    endpoint,
+    method: 'GET',
+    inputSchema: z
+      .object({ thscode: fundCode.optional(), thscodes: batchCodes(20).optional() })
+      .strict()
+      .refine(({ thscode, thscodes }) => (thscode === undefined) !== (thscodes === undefined), {
+        message: 'provide exactly one of thscode and thscodes',
+      }),
+    outputSchema: itemOutput,
+    options: [
+      { flags: '--thscode <code>', description: 'single fund thscode', type: 'string' },
+      fundPerformanceCodesOption,
+    ],
+    paging: 'none',
+    window: 'none',
+  };
+}
+
 function fundDetail(
   command:
     | 'profile'
     | 'holdings'
-    | 'returns'
     | 'holders'
     | 'industry-allocation'
-    | 'drawdowns'
     | 'dividends'
     | 'diagnostics'
     | 'financial-indicators'
@@ -813,7 +846,7 @@ const baseRemoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     description: 'Query daily A-share history',
     endpoint: '/api/a-share/prices/historical',
     method: 'GET',
-    inputSchema: historyInput,
+    inputSchema: stockHistoryInput,
     outputSchema: itemOutput,
     options: [
       {
@@ -1124,7 +1157,19 @@ const baseRemoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     paging: 'none',
     window: 'none',
   },
-  fundDetail('returns', 'Query fund interval returns', '/api/fund/performance/returns'),
+  {
+    id: 'fund.nav-snapshot',
+    command: ['fund', 'nav-snapshot'],
+    description: 'Query latest unit and adjusted fund NAV',
+    endpoint: '/api/fund/performance/nav-snapshot',
+    method: 'GET',
+    inputSchema: z.object({ thscodes: batchCodes(20) }).strict(),
+    outputSchema: itemOutput,
+    options: [{ ...fundPerformanceCodesOption, required: true }],
+    paging: 'none',
+    window: 'none',
+  },
+  fundPerformance('returns', 'Query fund interval returns', '/api/fund/performance/returns'),
   {
     id: 'fund.holders',
     command: ['fund', 'holders'],
@@ -1295,7 +1340,7 @@ const baseRemoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
     paging: 'none',
     window: 'five-years',
   },
-  fundDetail('drawdowns', 'Query fund drawdown periods', '/api/fund/performance/drawdowns'),
+  fundPerformance('drawdowns', 'Query fund drawdown periods', '/api/fund/performance/drawdowns'),
   {
     id: 'fund.top-holders',
     command: ['fund', 'top-holders'],
@@ -2832,7 +2877,7 @@ const baseRemoteCapabilities: readonly RemoteCapabilityDescriptor[] = [
   },
 ] as const;
 
-function calendarYearsAfter(milliseconds: number, years: number): number {
+export function calendarYearsAfter(milliseconds: number, years: number): number {
   const date = new Date(milliseconds + 8 * 3600_000);
   const month = date.getUTCMonth();
   date.setUTCFullYear(date.getUTCFullYear() + years);
@@ -2893,9 +2938,7 @@ function batchHistoryInput(kind: 'market' | 'index' | 'fund') {
     .object({
       ...batchHistoryFields,
       interval: (kind === 'market' ? z.enum(['1d', '1w', '1mo']) : z.literal('1d')).default('1d'),
-      ...(kind === 'market'
-        ? { adjust: z.enum(['none', 'forward', 'backward']).default('forward') }
-        : {}),
+      ...(kind === 'market' ? { adjust: stockAdjustment.default('forward') } : {}),
     })
     .strict()
     .superRefine((value, context) => {
@@ -2945,8 +2988,10 @@ const batchFinancialInput = z
       });
   });
 
+export const stockBatchHistoryInput = batchHistoryInput('market');
+
 const batchDefinitions = [
-  ['market.history', batchHistoryInput('market')],
+  ['market.history', stockBatchHistoryInput],
   ['index.history', batchHistoryInput('index')],
   ['fund.history', batchHistoryInput('fund')],
   ['financials.income', batchFinancialInput],

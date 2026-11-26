@@ -317,6 +317,15 @@
       "section_anchor": ""
     },
     {
+      "page": "index-capital-flow",
+      "page_title": "指数主力资金分时与分钟序列",
+      "domain": "index",
+      "title": "指数主力资金分时与分钟序列",
+      "id": "GET /api/a-share-index/capital-flow/intraday",
+      "output": "docs/api/index/capital-flow-intraday.md",
+      "section_anchor": ""
+    },
+    {
       "page": "news-flash",
       "page_title": "快讯",
       "domain": "news",
@@ -423,6 +432,15 @@
       "id": "GET /api/a-share/capital-flow/historical",
       "output": "docs/api/a-share/capital-flow.md",
       "section_anchor": "capital-flow-historical"
+    },
+    {
+      "page": "capital-flow",
+      "page_title": "主力资金",
+      "domain": "a-share",
+      "title": "股票主力资金分钟序列",
+      "id": "GET /api/a-share/capital-flow/intraday",
+      "output": "docs/api/a-share/capital-flow.md",
+      "section_anchor": "capital-flow-intraday"
     },
     {
       "page": "financials",
@@ -576,6 +594,15 @@
       "id": "GET /api/fund/performance/nav",
       "output": "docs/api/fund/fund-performance.md",
       "section_anchor": "performance-nav"
+    },
+    {
+      "page": "fund-performance",
+      "page_title": "基金净值与业绩",
+      "domain": "fund",
+      "title": "基金最新净值快照",
+      "id": "GET /api/fund/performance/nav-snapshot",
+      "output": "docs/api/fund/fund-performance.md",
+      "section_anchor": "performance-nav-snapshot"
     },
     {
       "page": "fund-performance",

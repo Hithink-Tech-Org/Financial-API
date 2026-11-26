@@ -3,11 +3,14 @@
 [业务导航](README.md)
 
 - [基金净值](#performance-nav)：`GET /api/fund/performance/nav`
+- [基金最新净值快照](#performance-nav-snapshot)：`GET /api/fund/performance/nav-snapshot`
 - [基金区间收益](#performance-returns)：`GET /api/fund/performance/returns`
 - [基金历史业绩指标](#performance-indicators-historical)：`GET /api/fund/performance/indicators-historical`
 - [基金最大回撤](#performance-drawdowns)：`GET /api/fund/performance/drawdowns`
 
+- 本页接口返回统一 `ApiResponse` 信封；响应中的时间戳采用毫秒级 Unix 时间戳，时区按 `Asia/Shanghai`。
 - `thscode` 是基金唯一标识，必须保留市场后缀。收益率、占比和回撤字段为百分数原值。
+- 区间收益、最大回撤和最新净值快照支持每批 1 至 20 只。用英文逗号分隔完整代码，按首次出现的请求顺序返回有数据的基金，重复代码只计一次查询。批次全未知返回 `3001`，查询成功但全批无可用数据返回 `3002`。
 
 <a id="performance-nav"></a>
 <a id="performance-nav--基金净值"></a>
@@ -72,6 +75,68 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/nav?thscode=510300.SH&range=
 | `unit_nav` | number | 单位净值；未通过 `nav_type` 请求时不输出。 |
 | `adj_nav` | number | 复权净值；未通过 `nav_type` 请求时不输出，不等同于累计净值。 |
 
+<a id="performance-nav-snapshot"></a>
+
+<a id="performance-nav-snapshot--基金最新净值快照"></a>
+## 基金最新净值快照
+
+```text
+GET /api/fund/performance/nav-snapshot
+```
+
+批量查询上游已写入的最新单位净值与复权净值。更新期间，快照与历史净值序列末值可能短暂不同。需要净值日期时请查询[基金净值](#performance-nav--基金净值)。
+
+<a id="performance-nav-snapshot--请求参数"></a>
+### 请求参数
+
+| 参数 | 类型 | 必需 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `thscodes` | string | 是 | — | 1 至 20 个完整基金代码，用英文逗号分隔。 |
+
+<a id="performance-nav-snapshot--请求示例"></a>
+### 请求示例
+
+```bash
+curl 'https://fuyao.aicubes.cn/api/fund/performance/nav-snapshot?thscodes=510300.SH%2C158001.SZ' \
+  -H 'X-api-key: <your-api-key>'
+```
+
+<a id="performance-nav-snapshot--响应示例"></a>
+### 响应示例
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "request_id": "example-request-id",
+  "data": {
+    "item": [
+      {
+        "thscode": "510300.SH",
+        "unit_nav": 4.1015,
+        "adj_nav": 4.3217
+      },
+      {
+        "thscode": "158001.SZ",
+        "unit_nav": 1.0463,
+        "adj_nav": 1.0463
+      }
+    ]
+  }
+}
+```
+
+<a id="performance-nav-snapshot--返回字段"></a>
+### 返回字段
+
+`data` 只有 `item`，快照省略净值日期和时间戳。两项净值均以四位小数返回，缺值省略。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `thscode` | string | 带市场后缀的完整基金代码。 |
+| `unit_nav` | number | 单位净值。 |
+| `adj_nav` | number | 复权净值。 |
+
 <a id="performance-returns"></a>
 
 <a id="performance-returns--基金区间收益"></a>
@@ -81,12 +146,17 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/nav?thscode=510300.SH&range=
 GET /api/fund/performance/returns
 ```
 
+单查与批查使用同一统计口径。收益率使用百分数原值。可见指标的缺值返回 `null`。即使收益率或同类平均缺值，只要上游有排名或排名总数，仍会独立返回。
+
 <a id="performance-returns--请求参数"></a>
 ### 请求参数
 
 | 参数 | 类型 | 必需 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `thscode` | string | 是 | — | 完整基金 thscode，必须保留市场后缀。 |
+| `thscode` | string | 否 | — | 单只基金的完整代码，与 `thscodes` 二选一。 |
+| `thscodes` | string | 否 | — | 1 至 20 个完整基金代码，用英文逗号分隔，与 `thscode` 二选一。 |
+
+缺少两种参数时返回 `1001`，同时提供时返回 `1004`。批量代码格式有误返回 `1002`，超过 20 个输入代码返回 `1003`。
 
 <a id="performance-returns--请求示例"></a>
 ### 请求示例
@@ -94,20 +164,26 @@ GET /api/fund/performance/returns
 ```bash
 curl 'https://fuyao.aicubes.cn/api/fund/performance/returns?thscode=510300.SH' \
   -H 'X-api-key: <your-api-key>'
+
+curl 'https://fuyao.aicubes.cn/api/fund/performance/returns?thscodes=510300.SH%2C158001.SZ' \
+  -H 'X-api-key: <your-api-key>'
 ```
 
 <a id="performance-returns--响应示例"></a>
 ### 响应示例
 
+以下为批量响应，节选部分指标。通过 `thscode` 单查时，每条结果省略 `thscode` 字段。
+
 ```json
 {
   "code": 0,
   "message": "success",
-  "request_id": "61cb2a8b9340483aaf00e36748f77918",
+  "request_id": "example-request-id",
   "data": {
-    "timestamp": 0,
+    "timestamp": 1794967200000,
     "item": [
       {
+        "thscode": "510300.SH",
         "return_month": -3.33,
         "return_tmonth": 0.03,
         "return_hyear": 0.19,
@@ -116,6 +192,14 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/returns?thscode=510300.SH' \
         "return_fyear": 1.77,
         "return_nowyear": 2.49,
         "return_now": 121.58
+      },
+      {
+        "thscode": "158001.SZ",
+        "return_year": null,
+        "return_now": -0.32,
+        "peer_average_year": null,
+        "rank_year": 615,
+        "rank_total_year": 4754
       }
     ]
   }
@@ -125,22 +209,45 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/returns?thscode=510300.SH' \
 <a id="performance-returns--返回字段"></a>
 ### 返回字段
 
-`data.item[]` 字段：
+`data.item[]` 字段。外网完整视图包含 10 项自身收益、8 项同类平均、8 项同类排名和 8 项排名总数。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `return_month` | number | 近一月收益率，百分数原值。 |
-| `return_week` | number | 近一周收益率，百分数原值。 |
-| `return_tmonth` | number | 近三月收益率，百分数原值。 |
-| `return_hyear` | number | 近半年收益率，百分数原值。 |
-| `return_year` | number | 近一年收益率，百分数原值。 |
-| `return_twoyear` | number | 近两年收益率，百分数原值。 |
-| `return_tyear` | number | 近三年收益率，百分数原值。 |
-| `return_fyear` | number | 近五年收益率，百分数原值。 |
-| `return_nowyear` | number | 今年以来收益率，百分数原值。 |
-| `return_now` | number | 成立以来收益率，百分数原值。 |
-| `peer_average_*` | number | 对应周期的同类平均收益率；周期后缀覆盖 `week`、`month`、`tmonth`、`hyear`、`year`、`twoyear`、`tyear`、`fyear`。 |
-| `rank_*` / `rank_total_*` | integer | 对应周期的同类排名与参与排名总数。 |
+| `thscode` | string | 批量查询返回带市场后缀的完整基金代码，单查省略。 |
+| `return_month` | number 或 null | 近一月收益率，百分数原值。 |
+| `return_week` | number 或 null | 近一周收益率，百分数原值。 |
+| `return_tmonth` | number 或 null | 近三月收益率，百分数原值。 |
+| `return_hyear` | number 或 null | 近半年收益率，百分数原值。 |
+| `return_year` | number 或 null | 近一年收益率，百分数原值。 |
+| `return_twoyear` | number 或 null | 近两年收益率，百分数原值。 |
+| `return_tyear` | number 或 null | 近三年收益率，百分数原值。 |
+| `return_fyear` | number 或 null | 近五年收益率，百分数原值。 |
+| `return_nowyear` | number 或 null | 今年以来收益率，百分数原值。 |
+| `return_now` | number 或 null | 成立以来收益率，百分数原值。 |
+| `peer_average_week` | number 或 null | 近一周同类平均收益率，百分数原值。 |
+| `peer_average_month` | number 或 null | 近一月同类平均收益率，百分数原值。 |
+| `peer_average_tmonth` | number 或 null | 近三月同类平均收益率，百分数原值。 |
+| `peer_average_hyear` | number 或 null | 近半年同类平均收益率，百分数原值。 |
+| `peer_average_year` | number 或 null | 近一年同类平均收益率，百分数原值。 |
+| `peer_average_twoyear` | number 或 null | 近两年同类平均收益率，百分数原值。 |
+| `peer_average_tyear` | number 或 null | 近三年同类平均收益率，百分数原值。 |
+| `peer_average_fyear` | number 或 null | 近五年同类平均收益率，百分数原值。 |
+| `rank_week` | integer 或 null | 近一周同类排名。 |
+| `rank_month` | integer 或 null | 近一月同类排名。 |
+| `rank_tmonth` | integer 或 null | 近三月同类排名。 |
+| `rank_hyear` | integer 或 null | 近半年同类排名。 |
+| `rank_year` | integer 或 null | 近一年同类排名。 |
+| `rank_twoyear` | integer 或 null | 近两年同类排名。 |
+| `rank_tyear` | integer 或 null | 近三年同类排名。 |
+| `rank_fyear` | integer 或 null | 近五年同类排名。 |
+| `rank_total_week` | integer 或 null | 近一周参与同类排名的基金总数。 |
+| `rank_total_month` | integer 或 null | 近一月参与同类排名的基金总数。 |
+| `rank_total_tmonth` | integer 或 null | 近三月参与同类排名的基金总数。 |
+| `rank_total_hyear` | integer 或 null | 近半年参与同类排名的基金总数。 |
+| `rank_total_year` | integer 或 null | 近一年参与同类排名的基金总数。 |
+| `rank_total_twoyear` | integer 或 null | 近两年参与同类排名的基金总数。 |
+| `rank_total_tyear` | integer 或 null | 近三年参与同类排名的基金总数。 |
+| `rank_total_fyear` | integer 或 null | 近五年参与同类排名的基金总数。 |
 
 <a id="performance-indicators-historical"></a>
 
@@ -216,18 +323,26 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/indicators-historical?thscod
 GET /api/fund/performance/drawdowns
 ```
 
+最大回撤使用非负的百分数原值。例如 `2.3574` 表示最大回撤幅度为 `2.3574%`。真实的 `0` 照常返回，缺值省略。
+
 <a id="performance-drawdowns--请求参数"></a>
 ### 请求参数
 
 | 参数 | 类型 | 必需 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `thscode` | string | 是 | — | 完整基金 thscode。 |
+| `thscode` | string | 否 | — | 单只基金的完整代码，与 `thscodes` 二选一。 |
+| `thscodes` | string | 否 | — | 1 至 20 个完整基金代码，用英文逗号分隔，与 `thscode` 二选一。 |
+
+缺少两种参数时返回 `1001`，同时提供时返回 `1004`。批量代码格式有误返回 `1002`，超过 20 个输入代码返回 `1003`。
 
 <a id="performance-drawdowns--请求示例"></a>
 ### 请求示例
 
 ```bash
 curl 'https://fuyao.aicubes.cn/api/fund/performance/drawdowns?thscode=510300.SH' \
+  -H 'X-api-key: <your-api-key>'
+
+curl 'https://fuyao.aicubes.cn/api/fund/performance/drawdowns?thscodes=510300.SH%2C158001.SZ' \
   -H 'X-api-key: <your-api-key>'
 ```
 
@@ -238,23 +353,29 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/drawdowns?thscode=510300.SH'
 {
   "code": 0,
   "message": "success",
-  "request_id": "7c7fdfe771fc4c61bbab8410a250b61e",
+  "request_id": "example-request-id",
   "data": {
-    "timestamp": 1786690800000,
+    "timestamp": 1794967200000,
     "item": [
       {
         "thscode": "510300.SH",
         "ticker": "510300",
-        "week": -1.2,
-        "month": -3.6,
-        "tmonth": -6.8,
-        "hyear": -9.1,
-        "year": -12.5,
-        "twoyear": -18.4,
-        "tyear": -21.7,
-        "fyear": -28.9,
-        "nowyear": -7.3,
-        "now": -31.2
+        "week": 2.3574,
+        "month": 3.6,
+        "tmonth": 6.8,
+        "hyear": 9.1,
+        "year": 12.5,
+        "twoyear": 18.4,
+        "tyear": 21.7,
+        "fyear": 28.9,
+        "nowyear": 7.3,
+        "now": 31.2
+      },
+      {
+        "thscode": "158001.SZ",
+        "ticker": "158001",
+        "week": 0,
+        "month": 0.75
       }
     ]
   }
@@ -268,10 +389,17 @@ curl 'https://fuyao.aicubes.cn/api/fund/performance/drawdowns?thscode=510300.SH'
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `thscode` / `ticker` | string | 完整基金代码与纯代码。 |
-| `week` / `month` / `tmonth` | number | 近一周、近一月、近三月最大回撤。 |
-| `hyear` / `year` / `twoyear` | number | 近半年、近一年、近两年最大回撤。 |
-| `tyear` / `fyear` | number | 近三年、近五年最大回撤。 |
-| `nowyear` / `now` | number | 今年以来、成立以来最大回撤。 |
+| `thscode` | string | 完整同花顺代码。 |
+| `ticker` | string | 纯代码，用于展示。 |
+| `week` | number | 近一周最大回撤。 |
+| `month` | number | 近一月最大回撤。 |
+| `tmonth` | number | 近三月最大回撤。 |
+| `hyear` | number | 近半年最大回撤。 |
+| `year` | number | 近一年最大回撤。 |
+| `twoyear` | number | 近两年最大回撤。 |
+| `tyear` | number | 近三年最大回撤。 |
+| `fyear` | number | 近五年最大回撤。 |
+| `nowyear` | number | 今年以来最大回撤。 |
+| `now` | number | 成立以来最大回撤。 |
 
 通用参数与错误码参见[基金 API 总览](README.md)。

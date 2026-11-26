@@ -11,6 +11,7 @@
 | 直接调用 REST API、查参数或响应字段 | [REST API 契约](api/README.md) |
 | 为聊天客户端配置托管 MCP | [MCP 接入说明](mcp.md) |
 | 安装并使用 Node.js CLI | [CLI README](../hithink-finance-cli/README.md) |
+| 在 DeepSeek Harness 取数、查看图表或制作看板 | [DSH 插件图文指南](../dsh-plugins/hithink-finance/README.md) |
 | 使用 Python toolkit、SDK 和本地 marketdb | [Python README](../python/README.md) |
 | 查询 REST API 文档或按需求选择 HTTP 接口 | [`hithink-finance` Skill](../skills/hithink-finance/SKILL.md) |
 | CLI 安装前准备、安装与首次接入 | [CLI 简介与首次接入](../skills/hithink-finance/references/cli.md) |

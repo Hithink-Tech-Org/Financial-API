@@ -26,6 +26,7 @@ export interface OAuthTransport {
 }
 export interface GlobalProviderOptions {
   env?: NodeJS.ProcessEnv;
+  apiKey?: string;
   legacy: CredentialStore;
   validateKey: (key: string) => Promise<void>;
   validateOAuth: (tokens: OAuthTokens, signal?: AbortSignal) => Promise<void>;
@@ -145,9 +146,10 @@ export class GlobalAuthProvider {
   }
 
   async resolve(profile = 'default', explicit?: string): Promise<AuthSession> {
-    if (explicit !== undefined) {
-      if (!explicit.trim()) throw authError('AUTH_API_KEY_EMPTY', 'The API key cannot be empty.');
-      return { method: 'api-key', profile: 'default', apiKey: explicit, source: 'explicit' };
+    const apiKey = explicit ?? this.options.apiKey;
+    if (apiKey !== undefined) {
+      if (!apiKey.trim()) throw authError('AUTH_API_KEY_EMPTY', 'The API key cannot be empty.');
+      return { method: 'api-key', profile: 'default', apiKey, source: 'explicit' };
     }
     const state = await this.initialize(profile);
     const method = state.active_method;
