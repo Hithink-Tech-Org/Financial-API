@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -74,7 +75,12 @@ test('generated Skill manifest pins every owned file by sha256', async () => {
     files: Record<string, string>;
   };
   expect(Object.keys(manifest.files)).toHaveLength(146);
-  expect(Object.values(manifest.files).every((hash) => /^[a-f0-9]{64}$/u.test(hash))).toBe(true);
+  for (const [relative, digest] of Object.entries(manifest.files)) {
+    const text = await readFile(path.join('skills', relative), 'utf8');
+    expect(createHash('sha256').update(normalizeLineEndings(text)).digest('hex'), relative).toBe(
+      digest,
+    );
+  }
 });
 
 test('generated fund-news Skill terminates cursor paging with has_more', async () => {

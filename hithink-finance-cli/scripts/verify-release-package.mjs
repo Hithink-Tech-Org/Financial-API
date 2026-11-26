@@ -6,6 +6,7 @@ import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'no
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { releaseReceiptFile } from './validate-release.mjs';
 
 const run = promisify(execFile);
 assert(process.env.npm_execpath, 'Run through npm run verify:release-package.');
@@ -32,6 +33,8 @@ async function npm(args) {
 const [packed] = JSON.parse(
   (await npm(['pack', '--json', '--ignore-scripts', '--pack-destination', destination])).stdout,
 );
+assert.equal(packed.name, pkg.name);
+assert.equal(packed.version, pkg.version);
 const files = new Set(packed.files.map((file) => file.path));
 for (const name of ['dist/cli/main.js', 'npm-shrinkwrap.json', 'skills/manifest.json', 'LICENSE'])
   assert(files.has(name), name);
@@ -47,7 +50,7 @@ try {
     'install',
     '--prefix',
     prefix,
-    '--offline',
+    '--prefer-offline',
     '--ignore-scripts',
     '--omit=dev',
     '--no-audit',
@@ -121,7 +124,7 @@ syncBuiltinESMExports();\n`,
     assert(file.startsWith(skills + path.sep));
     assert.equal(
       createHash('sha256')
-        .update(await readFile(file))
+        .update((await readFile(file, 'utf8')).replaceAll('\r\n', '\n'))
         .digest('hex'),
       digest,
       name,
@@ -135,14 +138,21 @@ syncBuiltinESMExports();\n`,
     packed.integrity,
     'Tarball changed after installation smoke.',
   );
-  console.log(
-    JSON.stringify({
-      version: pkg.version,
-      tarball,
-      integrity: packed.integrity,
-      installedSmoke: 'passed',
-    }),
-  );
+  const receipt = {
+    repository: process.env.GITHUB_REPOSITORY,
+    sha: process.env.GITHUB_SHA,
+    runId: process.env.GITHUB_RUN_ID,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+    filename: packed.filename,
+    name: packed.name,
+    version: packed.version,
+    integrity: packed.integrity,
+    installedSmoke: 'passed',
+  };
+  await writeFile(path.join(destination, releaseReceiptFile), JSON.stringify(receipt) + '\n', {
+    flag: 'wx',
+  });
+  console.log(JSON.stringify({ ...receipt, tarball }));
   if (process.env.GITHUB_OUTPUT) {
     assert(!/[\r\n]/u.test(tarball));
     await appendFile(process.env.GITHUB_OUTPUT, `tarball=${tarball}\n`);

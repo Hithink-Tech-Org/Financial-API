@@ -74,7 +74,7 @@ CLI 优先使用具体命令的 `--output`、`db export` 或 `market panel --out
 
 发布前固定一个候选版本，检查失败时修复同一候选，不因 CI 失败自动递增版本号；验证通过后再创建发布 tag。先核对 npm 与 GitHub Release 的实际发布状态，已发布版本不可覆盖。替换已推送但未发布的候选 tag，须获得用户对远端历史修改的明确授权；用户明确批准的例外仅适用于当次发布。
 
-CLI 自动 CI 使用 Linux/Node 24 基线；Windows、Linux、macOS 的 Node 22/24 平台矩阵通过手动入口按需选择。授权、权限、子进程或原生依赖变更须记录对应平台的验证范围。发布工作流复用同一仓库、同一 SHA 的主分支成功检查，执行构建、许可证和 tarball 隔离安装冒烟，发布同一 tarball；不重复运行全量源码测试。修改 CI、测试或发布规范本身不递增 CLI 版本。只有本地操作授权时，不推送或触发远端检查。
+CLI 自动 CI 使用 Linux/Node 24 基线。Windows、Linux、macOS 的 Node 22/24 平台矩阵按实际变更选择。主分支 CI 在打标签前检查许可证、打包、隔离安装并验证 CLI，将通过验证的 tarball 留作发布制品。发布工作流核对主分支运行、提交和制品完整性后，直接发布同一 tarball。CI、测试或发布规范调整沿用当前 CLI 版本。仅获本地操作授权时，验证在本地完成。
 
 ```bash
 python scripts/sync_skill_contracts.py --check

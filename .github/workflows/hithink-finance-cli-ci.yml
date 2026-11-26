@@ -41,6 +41,19 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run verify
       - run: npm pack --dry-run --ignore-scripts
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+      - run: node scripts/check-license.mjs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Pack and verify the release artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run verify:release-package -- "$RUNNER_TEMP/hithink-finance-release"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: hithink-finance-cli-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hithink-finance-release/
+          if-no-files-found: error
+          retention-days: 14
   select-platforms:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
