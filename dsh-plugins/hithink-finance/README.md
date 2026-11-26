@@ -70,7 +70,7 @@
 
 ## 安装
 
-插件包名为 `@hithink-tech/dsh-finance`。支持 DSH 0.2.0 及以上版本，以及从 0.2.0-rc.1 起的兼容预发布版本。Windows 上已验证 DSH Web 和官方 DSH Desktop。选择 npm 或 GitHub Release 安装包，安装时需要联网获取依赖。 [npm 包](https://www.npmjs.com/package/@hithink-tech/dsh-finance) · [下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [从源码构建](#从源码构建)
+插件包名为 `@hithink-tech/dsh-finance`。支持 DSH 0.2.0 及以上版本，以及从 0.2.0-rc.1 起的兼容预发布版本。可在 DSH Web 或 Windows Desktop 使用 npm 或 GitHub Release 安装包。安装时按 npm 的 `latest` 安装金融数据 CLI。本地日线选源从 CLI 0.2.6 起可用。 [npm 包](https://www.npmjs.com/package/@hithink-tech/dsh-finance) · [下载插件 0.1.1](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/dsh-finance-v0.1.1/hithink-tech-dsh-finance-0.1.1.tgz) · [从源码构建](#从源码构建)
 
 ### Windows Desktop
 
@@ -80,13 +80,13 @@
    - 从 npm 安装
 
      ```powershell
-     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add '@hithink-tech/dsh-finance@0.1.0' --ignore-scripts
+     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add '@hithink-tech/dsh-finance@0.1.1' --ignore-scripts
      ```
 
    - 使用 GitHub Release 安装包
 
      ```powershell
-     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'D:\Downloads\hithink-tech-dsh-finance-0.1.0.tgz' --ignore-scripts
+     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'D:\Downloads\hithink-tech-dsh-finance-0.1.1.tgz' --ignore-scripts
      ```
 
 3. 重新打开 Desktop，进入「插件 → 已安装」，找到「同花顺金融数据」并启用。左侧出现「同花顺金融数据」后，点击打开工作台。 [DSH Desktop 内置命令说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md#内置命令运行时)
@@ -99,13 +99,13 @@
    - 从 npm 安装
 
      ```sh
-     dsh plugin --profile web add @hithink-tech/dsh-finance@0.1.0 --ignore-scripts
+     dsh plugin --profile web add @hithink-tech/dsh-finance@0.1.1 --ignore-scripts
      ```
 
    - 使用 GitHub Release 安装包
 
      ```sh
-     dsh plugin --profile web add ./hithink-tech-dsh-finance-0.1.0.tgz --ignore-scripts
+     dsh plugin --profile web add ./hithink-tech-dsh-finance-0.1.1.tgz --ignore-scripts
      ```
 
 3. 运行 `dsh web` 或重启已有 Web 实例，再打开命令输出的地址。在「插件 → 已安装」确认「同花顺金融数据」已启用，再从左侧打开工作台。
@@ -175,7 +175,7 @@ dsh plugin --profile web remove @hithink-tech/dsh-finance
 
 ## 从源码构建
 
-在仓库根目录执行以下命令，使用 Node.js 22.13 或更高的 22.x 版本，或 Node.js 24 及以上版本。`npm pack` 会构建插件并在子目录生成 `hithink-tech-dsh-finance-0.1.0.tgz`。
+在仓库根目录执行以下命令，使用 Node.js 22.13 或更高的 22.x 版本，或 Node.js 24 及以上版本。`npm pack` 会构建插件并在子目录生成 `hithink-tech-dsh-finance-0.1.1.tgz`。
 
 ```sh
 cd dsh-plugins/hithink-finance

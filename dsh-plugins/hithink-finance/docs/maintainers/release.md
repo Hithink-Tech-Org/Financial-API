@@ -4,10 +4,11 @@
 
 ## 准备候选版本
 
-1. 核对 `package.json` 和 `package-lock.json` 的版本。开发环境可选择新的输出目录，运行同一套制品验证。
+1. 核对 `package.json` 和 `package-lock.json` 的版本。若需要配套新版 CLI，先确认所用 npm 源的 `latest` 已指向该版本，再更新锁文件。插件的依赖声明使用 `latest`。
 
    ```sh
    cd dsh-plugins/hithink-finance
+   npm update @hithink-tech/hithink-finance-cli --package-lock-only --ignore-scripts --prefer-online
    npm ci --ignore-scripts
    npm test
    npm run verify:release-package -- ./out/dsh-finance-release
