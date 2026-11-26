@@ -1,0 +1,48 @@
+name: dsh-finance CI
+on:
+  pull_request:
+    paths:
+      - "dsh-plugins/hithink-finance/**"
+      - "examples/inspirations/**"
+      - "hithink-finance-cli/scripts/validate-release.mjs"
+      - ".github/workflows/dsh-finance-ci.yml"
+      - ".github/workflows/dsh-finance-release.yml"
+  push:
+    branches: [main]
+    paths:
+      - "dsh-plugins/hithink-finance/**"
+      - "examples/inspirations/**"
+      - "hithink-finance-cli/scripts/validate-release.mjs"
+      - ".github/workflows/dsh-finance-ci.yml"
+      - ".github/workflows/dsh-finance-release.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dsh-plugins/hithink-finance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dsh-plugins/hithink-finance/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run build
+        if: github.event_name == 'pull_request'
+      - name: Build and verify the installable plugin
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run verify:release-package -- "$RUNNER_TEMP/dsh-finance-release"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: dsh-finance-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dsh-finance-release/
+          if-no-files-found: error
+          retention-days: 14

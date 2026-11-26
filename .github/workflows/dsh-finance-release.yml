@@ -1,0 +1,144 @@
+name: dsh-finance release
+on:
+  push:
+    tags: ["dsh-finance-v*"]
+  workflow_dispatch:
+concurrency:
+  group: dsh-finance-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/dsh-finance-v')
+    runs-on: ubuntu-latest
+    environment: npm-production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: dsh-plugins/hithink-finance
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      PACKAGE_NAME: '@hithink-tech/dsh-finance'
+      RELEASE_VALIDATOR: ../../hithink-finance-cli/scripts/validate-release.mjs
+    outputs:
+      run_id: ${{ steps.validation.outputs.run_id }}
+      artifact_name: ${{ steps.validation.outputs.artifact_name }}
+      filename: ${{ steps.package.outputs.filename }}
+      integrity: ${{ steps.package.outputs.integrity }}
+      dist_tag: ${{ steps.state.outputs.dist_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Verify tag and plugin package version
+        run: node "$RELEASE_VALIDATOR" ref
+      - name: Check npm publication state
+        id: state
+        shell: bash
+        run: |
+          npm view "$PACKAGE_NAME" versions --registry https://registry.npmjs.org --prefer-online --json > "$RUNNER_TEMP/plugin-versions.json"
+          node "$RELEASE_VALIDATOR" registry "$RUNNER_TEMP/plugin-versions.json" >> "$GITHUB_OUTPUT"
+      - name: Select the verified main push
+        id: validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/dsh-finance-ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f branch=main -f event=push -f status=success -F per_page=1 > "$RUNNER_TEMP/plugin-validation.json"
+          node "$RELEASE_VALIDATOR" ci "$RUNNER_TEMP/plugin-validation.json" >> "$GITHUB_OUTPUT"
+      - name: Download the verified main artifact
+        id: download
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.validation.outputs.artifact_name }}
+          path: ${{ runner.temp }}/dsh-finance-release/
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.validation.outputs.run_id }}
+      - name: Report an unavailable release artifact
+        if: failure() && steps.download.outcome == 'failure'
+        env:
+          VALIDATION_RUN_ID: ${{ steps.validation.outputs.run_id }}
+        run: echo "::error::Plugin artifact unavailable. Re-run main push run $VALIDATION_RUN_ID for this exact SHA, then retry the tag."
+      - name: Verify the plugin identity and integrity
+        id: package
+        env:
+          VALIDATION_RUN_ID: ${{ steps.validation.outputs.run_id }}
+          VALIDATION_RUN_ATTEMPT: ${{ steps.validation.outputs.run_attempt }}
+        run: node "$RELEASE_VALIDATOR" artifact "$RUNNER_TEMP/dsh-finance-release" >> "$GITHUB_OUTPUT"
+      - name: Publish to npm with provenance
+        if: steps.state.outputs.published != 'true'
+        env:
+          RELEASE_TARBALL: ${{ steps.package.outputs.tarball }}
+          RELEASE_DIST_TAG: ${{ steps.state.outputs.dist_tag }}
+        run: npm publish "$RELEASE_TARBALL" --ignore-scripts --provenance --access public --tag "$RELEASE_DIST_TAG"
+      - name: Verify npm package integrity
+        env:
+          RELEASE_VERSION: ${{ steps.state.outputs.version }}
+          RELEASE_INTEGRITY: ${{ steps.package.outputs.integrity }}
+        shell: bash
+        run: |
+          integrity_file="$RUNNER_TEMP/plugin-integrity.json"
+          for delay in 0 15 30 45 60 60 60 60 60 60 60; do
+            sleep "$delay"
+            if npm view "$PACKAGE_NAME@$RELEASE_VERSION" dist.integrity --registry https://registry.npmjs.org --prefer-online --fetch-retries=0 --fetch-timeout=5000 --json > "$integrity_file" && test -s "$integrity_file"; then
+              exec node "$RELEASE_VALIDATOR" integrity "$integrity_file"
+            fi
+          done
+          echo "::error::npm accepted this version, but its integrity is not visible yet. Retry this same tag to recover the GitHub Release after the registry updates."
+          exit 1
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_FILENAME: ${{ needs.publish.outputs.filename }}
+      RELEASE_INTEGRITY: ${{ needs.publish.outputs.integrity }}
+      RELEASE_DIST_TAG: ${{ needs.publish.outputs.dist_tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.publish.outputs.artifact_name }}
+          path: ${{ runner.temp }}/dsh-finance-release/
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.publish.outputs.run_id }}
+      - name: Attach the verified plugin to its Release
+        shell: bash
+        run: |
+          tarball="$RUNNER_TEMP/dsh-finance-release/$RELEASE_FILENAME"
+          actual="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
+          test "$actual" = "$RELEASE_INTEGRITY"
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/plugin-release.json" 2> "$RUNNER_TEMP/plugin-release.err"; then
+            if jq -e --arg filename "$RELEASE_FILENAME" '.assets | any(.name == $filename)' "$RUNNER_TEMP/plugin-release.json" > /dev/null; then
+              gh release download "$RELEASE_TAG" --pattern "$RELEASE_FILENAME" --dir "$RUNNER_TEMP/existing-plugin-asset"
+              if ! cmp -s -- "$tarball" "$RUNNER_TEMP/existing-plugin-asset/$RELEASE_FILENAME"; then
+                echo "::error::The existing plugin Release asset has different contents."
+                exit 1
+              fi
+              echo "The verified plugin is already attached to $RELEASE_TAG."
+              exit 0
+            fi
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/plugin-release.err"; then
+            prerelease=()
+            if [[ "$RELEASE_DIST_TAG" == next ]]; then prerelease+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" "$tarball" --verify-tag --latest=false --generate-notes \
+              --title "同花顺金融数据 DSH 插件 $RELEASE_TAG" "${prerelease[@]}"
+            exit 0
+          else
+            cat "$RUNNER_TEMP/plugin-release.err" >&2
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "$tarball"

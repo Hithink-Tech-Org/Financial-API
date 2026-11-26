@@ -176,6 +176,8 @@ npm test
 npm pack
 ```
 
+维护者发布新版本时使用插件专属的 CI 和版本标签。[发布与恢复说明](docs/maintainers/release.md)
+
 ## 开源依赖
 
 K 线与成交量使用 TradingView Lightweight Charts™，折线、排名和财务图表使用 Apache ECharts。安装包中的 `dist/third-party/` 收录许可与归属声明。 [TradingView](https://www.tradingview.com/) · [Lightweight Charts 5.3.0 归属声明](https://github.com/tradingview/lightweight-charts/blob/v5.3.0/NOTICE) · [fancy-canvas 2.1.0 许可](https://github.com/tradingview/fancy-canvas/blob/2.1.0/LICENSE)

@@ -1,20 +1,56 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const releaseReceiptFile = 'release-package.json';
 
-export function assertReleaseRef(version, tag, head, workflowSha, workflowRef) {
-  assert.equal(tag, `v${version}`, 'Tag and package version must match.');
+export function assertReleaseRef(version, tag, head, workflowSha, workflowRef, tagPrefix = 'v') {
+  assert.equal(tag, `${tagPrefix}${version}`, 'Tag and package version must match.');
   assert.equal(workflowRef, `refs/tags/${tag}`, 'Run the release workflow on the release tag ref.');
   assert.equal(
     head,
     workflowSha,
     'Dispatch the workflow on the release tag so provenance uses its SHA.',
   );
+}
+
+export function tarballIntegrity(tarball) {
+  return 'sha512-' + createHash('sha512').update(readFileSync(tarball)).digest('base64');
+}
+
+export function writeReleaseReceipt(directory, packed) {
+  const tarball = path.join(directory, packed.filename);
+  assert.equal(
+    tarballIntegrity(tarball),
+    packed.integrity,
+    'Tarball changed after installation smoke.',
+  );
+  const receipt = {
+    repository: process.env.GITHUB_REPOSITORY,
+    sha: process.env.GITHUB_SHA,
+    runId: process.env.GITHUB_RUN_ID,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+    filename: packed.filename,
+    name: packed.name,
+    version: packed.version,
+    integrity: packed.integrity,
+    installedSmoke: 'passed',
+  };
+  writeFileSync(path.join(directory, releaseReceiptFile), JSON.stringify(receipt) + '\n', {
+    flag: 'wx',
+  });
+  return { ...receipt, tarball };
+}
+
+export function assertRegistryIntegrity(value, expected) {
+  assert(
+    typeof expected === 'string' && /^sha512-[A-Za-z0-9+/]{86}==$/u.test(expected),
+    'Invalid verified tarball integrity.',
+  );
+  assert.equal(value, expected, 'The published npm version has different tarball integrity.');
 }
 
 export function assertSuccessfulValidation(response, repository, sha) {
@@ -62,8 +98,7 @@ export function assertReleaseArtifact(directory, pkg, source) {
   assert.equal(receipt.filename, filename, 'Artifact filename mismatch.');
   assert.equal(receipt.name, pkg.name, 'Artifact package name mismatch.');
   assert.equal(receipt.version, pkg.version, 'Artifact package version mismatch.');
-  const integrity = 'sha512-' + createHash('sha512').update(readFileSync(tarball)).digest('base64');
-  assert.equal(receipt.integrity, integrity, 'Artifact integrity mismatch.');
+  assert.equal(receipt.integrity, tarballIntegrity(tarball), 'Artifact integrity mismatch.');
   const embedded = JSON.parse(
     execFileSync('tar', ['-xOzf', tarball, 'package/package.json'], {
       encoding: 'utf8',
@@ -88,6 +123,8 @@ export function versionPublished(versions, version) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [mode, file] = process.argv.slice(2);
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const plugin = pkg.name === '@hithink-tech/dsh-finance';
+  assert(plugin || pkg.name === '@hithink-tech/hithink-finance-cli', 'Unknown release package.');
   if (mode === 'ref') {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     assertReleaseRef(
@@ -96,6 +133,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       head,
       process.env.GITHUB_SHA,
       process.env.GITHUB_REF,
+      plugin ? 'dsh-finance-v' : 'v',
     );
   } else if (mode === 'ci') {
     const run = assertSuccessfulValidation(
@@ -105,7 +143,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     );
     console.log(`run_id=${run.id}`);
     console.log(`run_attempt=${run.run_attempt}`);
-    console.log(`artifact_name=hithink-finance-cli-release-${run.head_sha}-${run.run_attempt}`);
+    const prefix = plugin ? 'dsh-finance-release' : 'hithink-finance-cli-release';
+    console.log(`artifact_name=${prefix}-${run.head_sha}-${run.run_attempt}`);
   } else if (mode === 'artifact') {
     const tarball = assertReleaseArtifact(file, pkg, {
       repository: process.env.GITHUB_REPOSITORY,
@@ -115,9 +154,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     });
     assert(!/[\r\n]/u.test(tarball));
     console.log(`tarball=${tarball}`);
+    console.log(`filename=${path.basename(tarball)}`);
+    console.log(`integrity=${tarballIntegrity(tarball)}`);
   } else if (mode === 'registry') {
     console.log(
       `published=${versionPublished(JSON.parse(readFileSync(file, 'utf8')), pkg.version)}`,
     );
-  } else throw Error('Expected ref, ci, artifact or registry mode.');
+    console.log(`version=${pkg.version}`);
+    console.log(`dist_tag=${pkg.version.split('+', 1)[0].includes('-') ? 'next' : 'latest'}`);
+  } else if (mode === 'integrity') {
+    assertRegistryIntegrity(JSON.parse(readFileSync(file, 'utf8')), process.env.RELEASE_INTEGRITY);
+  } else throw Error('Expected ref, ci, artifact, registry or integrity mode.');
 }

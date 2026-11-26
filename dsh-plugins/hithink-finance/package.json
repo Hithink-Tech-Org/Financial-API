@@ -2,6 +2,7 @@
   "name": "@hithink-tech/dsh-finance",
   "version": "0.1.0",
   "description": "Hithink Finance workbench, pages and charts for DeepSeek Harness",
+  "keywords": ["dsh-plugin", "deepseek-harness", "financial-data"],
   "icon": "./assets/icon.png",
   "type": "module",
   "main": "./src/host/index.js",
@@ -27,6 +28,7 @@
     "build": "node scripts/sync-workbench-samples.mjs && node scripts/build-client.mjs",
     "pretest": "node scripts/sync-workbench-samples.mjs",
     "test": "node --test",
+    "verify:release-package": "node scripts/verify-release-package.mjs",
     "prepack": "npm run build"
   },
   "engines": {

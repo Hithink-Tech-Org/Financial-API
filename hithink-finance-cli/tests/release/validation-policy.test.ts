@@ -8,6 +8,7 @@ import { expect, test } from 'vitest';
 import {
   assertReleaseArtifact,
   assertReleaseRef,
+  assertRegistryIntegrity,
   assertSuccessfulValidation,
   releaseReceiptFile,
   versionPublished,
@@ -32,6 +33,24 @@ test('only matching tag and workflow source can publish', () => {
   expect(() => assertReleaseRef('0.2.4', 'v0.2.3', sha, sha, ref)).toThrow();
   expect(() => assertReleaseRef('0.2.4', 'v0.2.4', sha, 'b'.repeat(40), ref)).toThrow();
   expect(() => assertReleaseRef('0.2.4', 'v0.2.4', sha, sha, 'refs/heads/main')).toThrow();
+});
+
+test('plugin versions use a separate tag prefix and published npm bytes must match', () => {
+  const tag = 'dsh-finance-v0.1.0';
+  expect(() =>
+    assertReleaseRef('0.1.0', tag, sha, sha, `refs/tags/${tag}`, 'dsh-finance-v'),
+  ).not.toThrow();
+  expect(() =>
+    assertReleaseRef('0.1.0', 'v0.1.0', sha, sha, 'refs/tags/v0.1.0', 'dsh-finance-v'),
+  ).toThrow();
+  const hash = (text: string) => 'sha512-' + createHash('sha512').update(text).digest('base64');
+  expect(() => assertRegistryIntegrity(hash('verified'), hash('verified'))).not.toThrow();
+  expect(() => assertRegistryIntegrity(hash('other'), hash('verified'))).toThrow(
+    'The published npm version has different tarball integrity.',
+  );
+  expect(() => assertRegistryIntegrity(undefined, undefined)).toThrow(
+    'Invalid verified tarball integrity.',
+  );
 });
 test('reuses a successful main push at the exact source SHA', () => {
   expect(assertSuccessfulValidation({ workflow_runs: [run] }, repository, sha)).toBe(run);

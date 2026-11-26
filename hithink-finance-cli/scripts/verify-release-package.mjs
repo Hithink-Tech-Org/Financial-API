@@ -6,7 +6,7 @@ import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'no
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { releaseReceiptFile } from './validate-release.mjs';
+import { writeReleaseReceipt } from './validate-release.mjs';
 
 const run = promisify(execFile);
 assert(process.env.npm_execpath, 'Run through npm run verify:release-package.');
@@ -130,29 +130,7 @@ syncBuiltinESMExports();\n`,
       name,
     );
   }
-  assert.equal(
-    'sha512-' +
-      createHash('sha512')
-        .update(await readFile(tarball))
-        .digest('base64'),
-    packed.integrity,
-    'Tarball changed after installation smoke.',
-  );
-  const receipt = {
-    repository: process.env.GITHUB_REPOSITORY,
-    sha: process.env.GITHUB_SHA,
-    runId: process.env.GITHUB_RUN_ID,
-    runAttempt: process.env.GITHUB_RUN_ATTEMPT,
-    filename: packed.filename,
-    name: packed.name,
-    version: packed.version,
-    integrity: packed.integrity,
-    installedSmoke: 'passed',
-  };
-  await writeFile(path.join(destination, releaseReceiptFile), JSON.stringify(receipt) + '\n', {
-    flag: 'wx',
-  });
-  console.log(JSON.stringify({ ...receipt, tarball }));
+  console.log(JSON.stringify(writeReleaseReceipt(destination, packed)));
   if (process.env.GITHUB_OUTPUT) {
     assert(!/[\r\n]/u.test(tarball));
     await appendFile(process.env.GITHUB_OUTPUT, `tarball=${tarball}\n`);
