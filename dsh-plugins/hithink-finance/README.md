@@ -62,32 +62,53 @@
 
 ## 安装
 
-插件包名为 `@hithink-tech/dsh-finance`。支持 DSH 0.2.0 及以上版本，以及从 0.2.0-rc.1 起的兼容预发布版本。Windows 上已验证 DSH Web 和官方 DSH Desktop。下载安装包后按下列步骤操作，安装时需要联网获取依赖。 [下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [从源码构建](#从源码构建)
+插件包名为 `@hithink-tech/dsh-finance`。支持 DSH 0.2.0 及以上版本，以及从 0.2.0-rc.1 起的兼容预发布版本。Windows 上已验证 DSH Web 和官方 DSH Desktop。选择 npm 或 GitHub Release 安装包，安装时需要联网获取依赖。 [npm 包](https://www.npmjs.com/package/@hithink-tech/dsh-finance) · [下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [从源码构建](#从源码构建)
 
 ### Windows Desktop
 
 1. 启动一次官方 DSH Desktop，然后通过应用菜单或托盘完全退出。
-2. 打开 PowerShell，使用 Desktop 自带的 `dsh.cmd` 安装。将示例中的应用目录和安装包路径替换成实际路径。
+2. 打开 PowerShell，使用 Desktop 自带的 `dsh.cmd`，选择一种安装方式。将示例中的应用目录和下载路径替换成实际路径。
 
-   ```powershell
-   & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'D:\Downloads\hithink-tech-dsh-finance-0.1.0.tgz' --ignore-scripts
-   ```
+   - 从 npm 安装
+
+     ```powershell
+     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add '@hithink-tech/dsh-finance@0.1.0' --ignore-scripts
+     ```
+
+   - 使用 GitHub Release 安装包
+
+     ```powershell
+     & 'C:\Program Files\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add 'D:\Downloads\hithink-tech-dsh-finance-0.1.0.tgz' --ignore-scripts
+     ```
 
 3. 重新打开 Desktop，进入「插件 → 已安装」，找到「同花顺金融数据」并启用。左侧出现「同花顺金融数据」后，点击打开工作台。 [DSH Desktop 内置命令说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/desktop/README.zh.md#内置命令运行时)
 
 ### DSH Web
 
 1. 按 DSH 官方说明准备 Web 所需的 Node.js 和 pnpm，使终端能运行 `dsh --version`。 [DSH Web 入门](https://deepseek-harness.github.io/deepseek-harness/guide/quickstart)
-2. 执行下面的命令，将 `.tgz` 替换为实际路径。已有 Web 实例时，安装后重启该实例。
+2. 选择一种安装方式。使用下载的安装包时，将 `.tgz` 路径替换为实际路径。
 
-   ```sh
-   dsh plugin --profile web add ./hithink-tech-dsh-finance-0.1.0.tgz --ignore-scripts
-   dsh web
-   ```
+   - 从 npm 安装
 
-3. 打开 `dsh web` 输出的地址。在「插件 → 已安装」确认「同花顺金融数据」已启用，再从左侧打开工作台。
+     ```sh
+     dsh plugin --profile web add @hithink-tech/dsh-finance@0.1.0 --ignore-scripts
+     ```
+
+   - 使用 GitHub Release 安装包
+
+     ```sh
+     dsh plugin --profile web add ./hithink-tech-dsh-finance-0.1.0.tgz --ignore-scripts
+     ```
+
+3. 运行 `dsh web` 或重启已有 Web 实例，再打开命令输出的地址。在「插件 → 已安装」确认「同花顺金融数据」已启用，再从左侧打开工作台。
 
 同时使用 Web 和 Desktop 时，分别安装到 `web` 和 `desktop` 配置。同一台电脑、同一系统用户下默认共用看板目录。
+
+### dsh-market 与 DSH「发现」
+
+dsh-market 使用 Awesome DSH Plugin 社区目录。条目收录并同步后，可在「插件市场」搜索同花顺金融数据，选择 `@hithink-tech/dsh-finance` 安装。[收录进度](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/18962) · [dsh-market](https://github.com/dsh-market/dsh-market)
+
+在支持自定义索引的 DSH 中启用「自定义插件索引」，从「插件 → 发现 → 添加索引源」添加 [dsh-plugin-catalog 索引](https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json)。目录收录后，搜索 `@hithink-tech/dsh-finance` 或「同花顺金融数据」，按界面提示安装。 [DSH 插件索引说明](https://deepseek-harness.github.io/deepseek-harness/guide/plugin-market) · [目录收录说明](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)
 
 ## 快速开始
 
@@ -134,7 +155,9 @@
 
 ## 更新与卸载
 
-更新或恢复指定版本时，用目标 `.tgz` 重复对应的安装步骤，再重启 DSH。卸载可在「插件 → 已安装」操作。也可以从终端执行下面的命令。Desktop 使用自带的 `dsh.cmd`，将 `web` 换成 `desktop`，并在操作前完全退出应用。
+更新或恢复指定版本时，按[安装步骤](#安装)使用带目标版本号的 npm 包名或该版本的 `.tgz`，再重启 DSH。
+
+卸载可在「插件 → 已安装」操作。也可以从终端执行下面的命令。Desktop 使用自带的 `dsh.cmd`，将 `web` 换成 `desktop`，并在操作前完全退出应用。
 
 ```sh
 dsh plugin --profile web remove @hithink-tech/dsh-finance

@@ -23,7 +23,7 @@
 
 使用 **DeepSeek Harness 插件 0.1.0**，可以通过对话查行情和财报、看交互图表，或从官方案例出发，制作可以刷新、回访和修改的金融看板。
 
-[下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [图文功能说明](dsh-plugins/hithink-finance/README.md#功能说明) · [安装](dsh-plugins/hithink-finance/README.md#安装) · [快速开始](dsh-plugins/hithink-finance/README.md#快速开始) · [动态看板案例](dsh-plugins/hithink-finance/README.md#从动态案例开始)
+[安装](dsh-plugins/hithink-finance/README.md#安装) · [npm 包](https://www.npmjs.com/package/@hithink-tech/dsh-finance) · [下载插件 0.1.0](https://github.com/Hithink-Tech-Org/Financial-API/releases/download/v0.2.5/hithink-tech-dsh-finance-0.1.0.tgz) · [图文功能说明](dsh-plugins/hithink-finance/README.md#功能说明) · [快速开始](dsh-plugins/hithink-finance/README.md#快速开始) · [动态看板案例](dsh-plugins/hithink-finance/README.md#从动态案例开始)
 
 ## 选择接入方式
 
