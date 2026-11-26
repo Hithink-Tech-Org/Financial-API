@@ -1,6 +1,6 @@
 # 本地查询 worker
 
-现有远端命令默认透明复用当前系统用户、构建和环境的本地worker。首次按需启动，后续命令复用模块与HTTP连接，空闲约120秒退出；每条请求重新读取配置和凭据。帮助、认证、维护和数据库命令在前台；market history显式--source remote可复用。
+现有远端命令默认透明复用当前系统用户、构建和环境的本地 worker。首次按需启动，后续命令复用模块与 HTTP 连接，空闲约 120 秒退出。每条请求重新读取配置和凭据。帮助、认证、维护和数据库命令在前台执行。market history 和 market history-batch 显式使用 --source remote 时可复用 worker。
 
 ```bash
 hithink-finance worker status --format json

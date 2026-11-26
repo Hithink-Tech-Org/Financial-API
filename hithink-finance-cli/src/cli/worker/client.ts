@@ -57,7 +57,7 @@ export function eligible(argv: readonly string[], routes: readonly string[][]): 
   if (!routes.some((route) => route[0] === command[0] && route[1] === command[1])) return false;
   return (
     command[0] !== 'market' ||
-    command[1] !== 'history' ||
+    (command[1] !== 'history' && command[1] !== 'history-batch') ||
     optionValue(argv, '--source') === 'remote'
   );
 }

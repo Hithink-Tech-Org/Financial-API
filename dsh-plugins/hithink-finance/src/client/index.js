@@ -1,5 +1,6 @@
 import { createElement as h, useEffect, useLayoutEffect, useSyncExternalStore } from 'react';
 import { accountNamespace, accountRemote } from '../host/account-remote.js';
+import { dataNamespace, dataRemote } from '../host/data-remote.js';
 import { workbenchNamespace, workbenchRemote } from '../host/workbench-remote.js';
 import { AccountSettings, FinancePanelIcon } from './account.js';
 import { FinanceToolView } from './result.js';
@@ -83,10 +84,11 @@ export function apply(ctx) {
   });
   const mounted = ctx.remote.$mount({
     package: accountRemote.package,
-    descriptors: [...accountRemote.descriptors, ...workbenchRemote.descriptors],
+    descriptors: [...accountRemote.descriptors, ...workbenchRemote.descriptors, ...dataRemote.descriptors],
   }).then(() => true, () => false);
   const account = bindRemote(ctx, mounted, accountRemote, accountNamespace);
   const workbench = bindRemote(ctx, mounted, workbenchRemote, workbenchNamespace, true);
+  const localData = bindRemote(ctx, mounted, dataRemote, dataNamespace, true);
   const drafts = createPageDrafts();
   ctx.inject(['layout', 'sidebarRight', 'sidebarRightTabs', 'uiWorkspace', 'sessions', 'workspaces', 'conversation'], (ui) => {
     const right = ui.sidebarRight;
@@ -181,7 +183,7 @@ export function apply(ctx) {
       const revealReference = () => {
         if (right.active()?.kind === tabId && right.isExpanded()) right.toggleExpanded();
       };
-      return h(FinanceWorkbench, { route: mainRoute, account, workbench, drafts, boards, pickDirectory, move: openRight,
+      return h(FinanceWorkbench, { route: mainRoute, account, workbench, localData, drafts, boards, pickDirectory, move: openRight,
         openComposer: (prompt) => composer.open(prompt),
         openReference: (board) => composer.reference(board, revealReference) });
     }
@@ -211,7 +213,7 @@ export function apply(ctx) {
       };
       return h(FinanceWorkbench, { route: tab.navigation.params?.financeRoute, navigationRevision: tab.navigation.revision,
         destination: target,
-        account, workbench, drafts, boards, pickDirectory, move: openMain, openComposer: (prompt) => composer.open(prompt, revealComposer),
+        account, workbench, localData, drafts, boards, pickDirectory, move: openMain, openComposer: (prompt) => composer.open(prompt, revealComposer),
         openReference: (board) => composer.reference(board, revealComposer),
         dock: true, isVisible: tab.visible });
     }));

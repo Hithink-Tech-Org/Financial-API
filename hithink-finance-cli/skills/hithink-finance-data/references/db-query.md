@@ -4,7 +4,7 @@
 
 - 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema db.query --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- 只读 SQL；小结果才可直接读取 JSON。
+- 只读打开已存在的数据库，小结果才可直接读取 JSON。数据库被占用时等待维护完成后再查。
 
 ## 命令
 

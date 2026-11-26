@@ -8,8 +8,8 @@ import { bundledExamples, getTemplateHtml, getTemplateSample, workbenchTemplates
 import { QUICK_START_PROMPT, QUICK_START_TITLE } from '../src/shared/quick-start.js';
 
 test('workbench preserves the gallery cases and serves their original examples', async () => {
-  assert.equal(workbenchTemplates.length, 23);
-  assert.equal(new Set(workbenchTemplates.map(({ id }) => id)).size, 23);
+  assert.equal(workbenchTemplates.length, 24);
+  assert.equal(new Set(workbenchTemplates.map(({ id }) => id)).size, 24);
   assert.equal(bundledExamples().length, 16);
   const counts = { live: 0, sample: 0 };
 
@@ -29,7 +29,7 @@ test('workbench preserves the gallery cases and serves their original examples',
       assert.equal(sample, undefined);
       assert.equal(template.dataMode, 'live');
       assert.match(template.prompt, /刷新/);
-      const slug = new URL(template.previewUrl).searchParams.get('page');
+      const slug = template.previewUrl ? new URL(template.previewUrl).searchParams.get('page') : template.id;
       assert.ok(officialBoardPages.some(([page, id]) => page === slug && id === template.id));
       continue;
     }
@@ -41,7 +41,7 @@ test('workbench preserves the gallery cases and serves their original examples',
     assert.equal(html, sample);
     assert.doesNotMatch(html, /id="hithink-finance-data"/);
   }
-  assert.deepEqual(counts, { live: 7, sample: 16 });
+  assert.deepEqual(counts, { live: 8, sample: 16 });
   assert.equal(await getTemplateSample('../../not-a-template'), undefined);
 });
 

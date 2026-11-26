@@ -15,6 +15,12 @@ const codeList = (max) => (value) => {
   const list = typeof value === 'string' ? value.split(',').map((entry) => entry.trim()) : value;
   return Array.isArray(list) && list.length > 0 && list.length <= max && list.every(code);
 };
+const panelCodes = (value) => typeof value === 'string' && codeList(6)(value) &&
+  selectedCodes(value).every((entry) => /^\d{6}\.(?:SH|SZ|BJ)$/.test(entry));
+const panelDate = (value, now) => {
+  const time = midnight(value);
+  return Number.isFinite(time) && shanghaiDate(time) === value && time <= now;
+};
 const date = (value, now) => {
   const time = midnight(value);
   return Number.isFinite(time) && shanghaiDate(time) === value && time <= now && time >= now - 366 * day;
@@ -303,12 +309,16 @@ async function linkage({ read, mark }, params, now) {
   const stock = params.stock?.toUpperCase() ?? '600726.SH';
   const sector = params.sector?.toUpperCase() ?? '881105.TI';
   const index = params.index?.toUpperCase() ?? indexDefault;
+  const adjust = params.adjust ?? 'forward';
   const indexCodes = unique([sector, index]);
-  const range = historyRange(now, 180);
+  const today = midnight(shanghaiDate(now));
+  const historyEnd = adjust === 'none' && now < today + 15 * 3_600_000 ? today - 1 : now;
+  const range = historyRange(historyEnd, 180);
   const [stockQuote, indexQuotes, stockHistory, sectorHistory, indexHistory, members] = await Promise.all([
     read('market.snapshot', '个股行情快照', { thscodes: stock }, quoteTime),
     read('index.snapshot', '板块与基准快照', { thscodes: indexCodes.join(',') }, quoteTime),
-    read('market.history', '个股前复权日线', { thscode: stock, ...range, adjust: 'forward' }, historyTime),
+    read('market.history', adjust === 'none' ? '个股未复权日线' : '个股前复权日线',
+      { thscode: stock, ...range, adjust }, { ...historyTime, source: 'auto' }),
     read('index.history', '板块日线', { thscode: sector, ...range }, historyTime),
     read('index.history', '基准指数日线', { thscode: index, ...range }, historyTime),
     read('index.constituents', '板块成分股', { thscode: sector }, { max: 4000 }),
@@ -333,7 +343,7 @@ async function linkage({ read, mark }, params, now) {
   const verified = byCode(members.rows).has(stock) ||
     (members.receipt.status === 'ok' && members.rows.every((row) => code(row.thscode)) ? false : null);
   return {
-    selection: { stock, sector, index },
+    selection: { stock, sector, index, adjust },
     membership: { verified, total: members.data ? members.receipt.count : null },
     breadth: {
       sample: changes.length, rising, falling, flat: changes.length - rising - falling,
@@ -348,6 +358,31 @@ async function linkage({ read, mark }, params, now) {
   };
 }
 
+async function localMarketPanel({ read, mark }, params, now) {
+  const stockCodes = selectedCodes(params.stocks ?? '600519.SH,000001.SZ');
+  const start = params.start ?? shanghaiDate(now - 6 * day);
+  const end = params.end ?? shanghaiDate(now);
+  if (start > end || midnight(end) - midnight(start) > 29 * day) {
+    throw invalidQuery('请选择顺序正确且最多 30 个自然日的查询区间。');
+  }
+  // Codes and dates have been checked against fixed formats before composing this query.
+  const codes = stockCodes.map((entry) => `'${entry}'`).join(', ');
+  const sql = `SELECT thscode, CAST(date AS VARCHAR) AS date, open, high, low, close, volume
+    FROM raw_kline_daily WHERE thscode IN (${codes}) AND date BETWEEN DATE '${start}' AND DATE '${end}'
+    ORDER BY date DESC, thscode LIMIT 180`;
+  const result = await read('db.query', '本地 A 股未复权日线', { sql }, {
+    source: 'local', max: 180, date: (_data, rows) => midnight(rows[0]?.date),
+  });
+  const rows = result.rows;
+  const coverage = stockCodes.map((thscode) => {
+    const bars = rows.filter((row) => row.thscode === thscode);
+    return { thscode, days: bars.length, start: bars.at(-1)?.date ?? null, end: bars[0]?.date ?? null };
+  });
+  const missing = coverage.filter(({ days }) => !days).map(({ thscode }) => thscode);
+  if (rows.length && missing.length) mark(result.receipt, 'partial', `所选区间中 ${missing.join('、')} 没有本地记录。`);
+  return { selection: { stocks: stockCodes, start, end }, coverage, rows };
+}
+
 const cases = new Map([
   ['fund-dca', ['指数定投监控', fundDca, { fund: code, index: code, base: amount, frequency: choice('monthly', 'weekly'), day: planDay }]],
   ['etf-compare', ['同指数 ETF 对比', etfCompare, { index: code, funds: codeList(6) }]],
@@ -355,7 +390,9 @@ const cases = new Map([
   ['limit-break', ['涨跌停与炸板', limitBreak, { date }]],
   ['hot-stock-ranking', ['热股榜监控', hotRank, { date }]],
   ['dragon-tiger-anomalies', ['龙虎榜与个股异动', dragonAnomaly, { date, board: choice('all', 'org', 'hot_money') }]],
-  ['stock-sector-index', ['个股-板块-指数联动', linkage, { stock: code, sector: code, index: code }]],
+  ['stock-sector-index', ['个股-板块-指数联动', linkage,
+    { stock: code, sector: code, index: code, adjust: choice('forward', 'none') }]],
+  ['local-market-panel', ['本地市场数据面板', localMarketPanel, { stocks: panelCodes, start: panelDate, end: panelDate }]],
 ]);
 
 export function officialCase(input) {
@@ -371,12 +408,13 @@ export function officialCase(input) {
   if (!isRecord(params) || Object.entries(params).some(([key, value]) => !Object.hasOwn(fields, key) || !fields[key](value, now))) {
     throw invalidQuery('案例参数的名称、格式或范围无效。');
   }
-  return async (cli, signal) => {
+  async function run(cli, signal) {
     const read = createOfficialCaseData(cli, signal);
     try {
       return read.finish(id, title, await build(read, params, now));
     } finally {
       await read.settle();
     }
-  };
+  }
+  return { requiresAccount: id !== 'local-market-panel', run };
 }

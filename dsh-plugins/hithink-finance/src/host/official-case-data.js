@@ -38,17 +38,18 @@ export function createOfficialCaseData(cli, signal) {
     receipt.message = message;
   }
 
-  function read(command, label, params = {}, { fields = ['item'], date, max = 400 } = {}) {
-    const receipt = { label, source: 'Fuyao', command, updated_at: null, fetched_at: null, status: 'ok', count: 0 };
+  function read(command, label, params = {}, { fields = ['item'], date, max = 400, source = 'remote' } = {}) {
+    const receipt = { label, source: null, command, updated_at: null, fetched_at: null, status: 'ok', count: 0 };
     freshness.push(receipt);
     const slot = nextSlot++ % slots.length;
     const operation = slots[slot].then(async () => {
       if (signal.aborted) throw cancelled();
       try {
         if (controller.aborted) throw fetchTimeout();
-        const argv = ['--source', 'remote', ...command.split('.'),
+        const argv = ['--source', source, ...command.split('.'),
           ...Object.entries(params).flatMap(([key, value]) => [`--${key}`, String(value)])];
-        const { data, meta, truncated } = await runWorkbenchQuery(cli, command, { source: 'remote', argv }, callSignal, 1024 * 1024);
+        const { data, meta, truncated } = await runWorkbenchQuery(cli, command, { source, argv }, callSignal, 1024 * 1024);
+        receipt.source = meta.source;
         receipt.fetched_at = Date.parse(meta.fetchedAt);
         if (meta.requestId) receipt.request_id = meta.requestId;
         if (!isRecord(data) || fields.some((field) => !Array.isArray(data[field]))) throw invalidResponse();

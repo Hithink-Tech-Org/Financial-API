@@ -7,6 +7,7 @@ import dca from './official-workbench/fund-dca.html';
 import hot from './official-workbench/hot-rank.html';
 import limit from './official-workbench/limit-break.html';
 import linkage from './official-workbench/stock-sector-index.html';
+import localPanel from './official-workbench/local-market-panel.html';
 import websiteStyles from './official-workbench/styles.css';
 import frameStyles from './official-workbench/frame.css';
 import { connectOfficialBoard, officialBoardDocument } from './official-workbench/frame.js';
@@ -20,6 +21,7 @@ const documents = {
   'hot-rank': hot,
   'dragon-anomaly': dragon,
   'stock-sector-index': linkage,
+  'local-market-panel': localPanel,
 };
 
 export function OfficialLiveBoard({ item, workbench, isVisible = true, onOpenAccount, onOpenBoard }) {

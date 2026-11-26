@@ -31,32 +31,25 @@ import { renderResult } from '../output/renderer.js';
 import { chooseSource, type DataSource } from '../application/source-policy.js';
 import { openDatabase } from '../infrastructure/duckdb/connection.js';
 import {
-  getHistory,
-  readCompatibleHistory,
-  restHistoryData,
+  completeLocalHistory,
+  fillUnadjustedBatchHistory,
+  readLocalHistory,
+  type DailyHistoryRequest,
 } from '../application/use-cases/market-history.js';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readStdin } from '../infrastructure/filesystem/stdin.js';
 import { writeDataFile, type DataFileFormat } from '../output/files.js';
 import { dataRows } from '../output/records.js';
 import { remoteOutputOptions } from '../contracts/output-options.js';
 
-const shanghaiDate = new Intl.DateTimeFormat('sv-SE', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-function missingLocalHistory(compatible = false): CliError {
+function missingLocalHistory(): CliError {
   return new CliError({
     code: 'DATA_INITIALIZATION_REQUIRED',
     category: 'local-data',
-    message: compatible
-      ? '本地库无法提供覆盖完整且口径一致的历史行情。'
-      : 'Local history does not cover the requested symbol and window.',
-    hint: 'Initialize or sync the local database, or choose the remote data source.',
+    message:
+      'Local history does not cover the requested symbols, trading dates, and adjustment mode.',
+    hint: 'Sync the local database or select remote. Local adjusted prices require verified adjustment coverage.',
     retryable: false,
     exitCode: 5,
   });
@@ -355,132 +348,55 @@ export function registerRemoteCapabilityGroup(
       const dailyStock = capability.id === 'market.history';
       const batchStock = capability.id === 'market.history-batch';
 
-      async function renderLocal(data: unknown, adjust: string, count: number) {
-        const meta = { source: 'local' as const, requestId: context.requestId, count };
-        const envelope = successEnvelope(capability.id, data, { ...meta, adjust });
-        if (raw.output === undefined) return renderResult(envelope, context);
-        const outputPath = await writeDataFile(
-          path.resolve(context.cwd ?? process.cwd(), raw.output),
-          envelope,
-          raw.fileFormat,
-          context.signal,
-        );
-        return renderResult(
-          successEnvelope(capability.id, { path: outputPath, format: raw.fileFormat, count }, meta),
-          context,
-        );
+      let remoteClient: FuyaoClient | undefined;
+      async function queryRemote(input: Record<string, unknown>) {
+        remoteClient ??= new FuyaoClient({
+          baseUrl: dependencies.baseUrl,
+          auth: await dependencies.authProvider.resolve(
+            globals.profile ?? 'default',
+            explicitApiKey,
+          ),
+          signal: context.signal,
+        });
+        return executeRemoteQuery(capability, input, remoteClient);
       }
 
-      // ========== market.history 特有：本地优先回退逻辑 ==========
-      if (context.compatibleHistory && (dailyStock || batchStock)) {
-        if (requested !== 'remote') {
-          const input = dailyStock
-            ? stockHistoryInput.parse(parsed.data)
-            : stockBatchHistoryInput.parse(parsed.data);
-          const thscodes = 'thscode' in input ? [input.thscode] : input.thscodes.split(',');
-          const adjust = stockAdjustment.parse(input.adjust ?? 'forward');
-          if (!('interval' in input) || input.interval === '1d') {
-            const databasePath = globals.db ?? dependencies.defaultDbPath;
-            let rows: Awaited<ReturnType<typeof readCompatibleHistory>>;
-            try {
-              const opened = await openDatabase(databasePath, { readOnly: true });
-              try {
-                rows = await readCompatibleHistory(
-                  opened.connection,
-                  { ...input, thscodes, adjust },
-                  context.signal,
-                );
-              } finally {
-                opened.close();
-              }
-            } catch {
-              throwIfCancelled(context.signal);
-            }
-            if (rows !== undefined) {
-              const data = batchStock
-                ? {
-                    interval: '1d',
-                    adjust,
-                    item: thscodes.map((thscode) => ({
-                      thscode,
-                      ...restHistoryData(rows.filter((row) => row.thscode === thscode)),
-                    })),
-                  }
-                : context.preserveJson
-                  ? { ...restHistoryData(rows), thscode: thscodes[0], interval: '1d', adjust }
-                  : rows;
-              await renderLocal(data, adjust, rows.length);
-              return;
-            }
-          }
-          if (requested === 'local') throw missingLocalHistory(true);
-        }
-      } else if (dailyStock) {
-        const input = parsed.data as {
-          thscode: string;
-          startMs: number;
-          endMs: number;
-          adjust: 'none' | 'forward' | 'backward';
+      let historyResult:
+        { source: 'local' | 'mixed'; data: unknown; requestId?: string } | undefined;
+      if (requested !== 'remote' && (dailyStock || (batchStock && parsed.data.interval === '1d'))) {
+        const input = dailyStock
+          ? stockHistoryInput.parse(parsed.data)
+          : stockBatchHistoryInput.parse(parsed.data);
+        const request: DailyHistoryRequest = {
+          thscodes: 'thscode' in input ? [input.thscode] : input.thscodes.split(','),
+          startMs: input.startMs,
+          endMs: input.endMs,
+          adjust: stockAdjustment.parse(input.adjust),
         };
-        const databasePath =
-          globals.db ??
-          (context.env ?? process.env).HITHINK_FINANCE_DB_PATH ??
-          dependencies.defaultDbPath;
-        // 检查本地数据库是否存在
-        const exists =
-          requested !== 'remote' &&
-          (await stat(databasePath)
-            .then((value) => value.isFile())
-            .catch(() => false));
-        if (exists) {
-          const opened = await openDatabase(databasePath);
+        let local: Awaited<ReturnType<typeof readLocalHistory>>;
+        if (request.adjust === 'none' || requested === 'local') {
           try {
-            const start = shanghaiDate.format(input.startMs);
-            const end = shanghaiDate.format(input.endMs);
-            const coverage = await opened.connection.runAndReadAll(
-              `SELECT min(date)::VARCHAR, max(date)::VARCHAR,
-                  (SELECT count(*)::VARCHAR FROM (
-                    SELECT DISTINCT date FROM raw_kline_daily WHERE date BETWEEN $start AND $end
-                    EXCEPT
-                    SELECT date FROM raw_kline_daily WHERE thscode = $symbol
-                  ))
-                FROM raw_kline_daily WHERE thscode = $symbol`,
-              { symbol: input.thscode, start, end },
-            );
-            const row = coverage.getRowsJson()[0];
-            const earliest = row?.[0];
-            const latest = row?.[1];
-            const coversWindow =
-              typeof earliest === 'string' &&
-              typeof latest === 'string' &&
-              earliest <= start &&
-              latest >= end &&
-              row?.[2] === '0';
-            if (requested === 'local' && !coversWindow) throw missingLocalHistory();
-            const source = chooseSource(
-              { kind: 'history', requested, symbolCount: 1 },
-              { exists, coversWindow },
-            );
-            // 如果 source-policy 决定使用本地数据，直接从 DuckDB 查询并返回
-            if (source === 'local') {
-              const rows = await getHistory(
-                opened.connection,
-                {
-                  thscodes: [input.thscode],
-                  start,
-                  end,
-                  adjust: input.adjust,
-                },
-                context.signal,
-              );
-              if (rows.length === 0) throw missingLocalHistory();
-              await renderLocal(rows, input.adjust, rows.length);
-              return;
+            const database = await openDatabase(globals.db ?? dependencies.defaultDbPath, {
+              readOnly: true,
+            });
+            try {
+              local = await readLocalHistory(database.connection, request, context.signal);
+            } finally {
+              database.close();
             }
-          } finally {
-            opened.close();
+          } catch {
+            throwIfCancelled(context.signal);
           }
-        } else if (requested === 'local') throw missingLocalHistory();
+        }
+        if (local) {
+          const data = completeLocalHistory(request, local, batchStock);
+          if (data) historyResult = { data, source: 'local' };
+          else if (requested === 'auto' && batchStock)
+            historyResult = await fillUnadjustedBatchHistory(request, local, (gap) =>
+              queryRemote({ ...parsed.data, ...gap, thscodes: gap.thscodes.join(',') }),
+            );
+        }
+        if (!historyResult && requested === 'local') throw missingLocalHistory();
       } else if (requested === 'local') {
         // 非 market.history 命令显式指定了 --source=local
         // 根据命令组推断 query kind 并进行本地健康检查
@@ -502,29 +418,21 @@ export function registerRemoteCapabilityGroup(
         );
       }
 
-      // ========== 远程 Fuyao API 查询流程 ==========
-      // 解析 API Key（支持 CLI 选项、stdin、环境变量、凭据存储等来源）
-      const auth = await dependencies.authProvider.resolve(
-        globals.profile ?? 'default',
-        explicitApiKey,
-      );
-      // 执行远程查询
-      const result = await executeRemoteQuery(
-        capability,
-        parsed.data,
-        new FuyaoClient({ baseUrl: dependencies.baseUrl, auth, signal: context.signal }),
-      );
-      // 如果返回数据包含 item 数组字段，提取 count 元数据
-      const count =
-        result.data !== null &&
-        typeof result.data === 'object' &&
-        'item' in result.data &&
-        Array.isArray(result.data.item)
+      const result = historyResult ?? {
+        ...(await queryRemote(parsed.data)),
+        source: 'remote' as const,
+      };
+      const count = Array.isArray(result.data)
+        ? result.data.length
+        : result.data !== null &&
+            typeof result.data === 'object' &&
+            'item' in result.data &&
+            Array.isArray(result.data.item)
           ? result.data.item.length
           : undefined;
       const meta = {
-        source: 'remote' as const,
-        ...(capability.id === 'market.history' ? { adjust: parsed.data.adjust as string } : {}),
+        source: result.source,
+        ...(dailyStock || batchStock ? { adjust: stockAdjustment.parse(parsed.data.adjust) } : {}),
         requestId: result.requestId ?? context.requestId,
         ...(count === undefined ? {} : { count }),
       };

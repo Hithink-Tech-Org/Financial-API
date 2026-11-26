@@ -4,7 +4,10 @@
 
 - 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema market.history --format json` 确认参数，未说明的组合规则再看命令 `--help`。
-- `--source auto` 在本地覆盖时读取本地日线；远端路径先用 `auth status` 复用当前启用的 OAuth 或 API Key。可用 `--source local` 明确只读本地数据。
+- 回源前用 `auth status` 检查连接，复用当前启用的 OAuth 或 API Key。
+- `--adjust none --source auto` 在交易日历和本地日线均覆盖时使用 DuckDB，否则整段查询远端。当前复权日线由远端计算。
+- `--source local` 全程只读本地。缺少日历、标的或行情覆盖时返回 `DATA_INITIALIZATION_REQUIRED`，已确认的无交易日区间返回空列表。
+- 本地单标的结果的 `data` 为 DuckDB 记录数组，远端结果的记录位于 `data.item`。
 
 ## 命令
 

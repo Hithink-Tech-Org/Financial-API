@@ -56,6 +56,7 @@ test('worker process environment excludes business credentials and routing exclu
   const routes = [
     ['market', 'snapshot'],
     ['market', 'history'],
+    ['market', 'history-batch'],
   ];
   expect(eligible(['market', 'snapshot'], routes)).toBe(true);
   expect(eligible(['--format', 'json', 'market', 'snapshot'], routes)).toBe(true);
@@ -63,6 +64,8 @@ test('worker process environment excludes business credentials and routing exclu
   expect(eligible(['market', 'snapshot', '--help'], routes)).toBe(false);
   expect(eligible(['market', 'history'], routes)).toBe(false);
   expect(eligible(['market', 'history', '--source=remote'], routes)).toBe(true);
+  expect(eligible(['market', 'history-batch', '--source=local'], routes)).toBe(false);
+  expect(eligible(['market', 'history-batch', '--source=remote'], routes)).toBe(true);
   expect(eligible(['auth', 'logout'], routes)).toBe(false);
 });
 

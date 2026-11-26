@@ -5,6 +5,9 @@
 - 读取[本域入口](../SKILL.md)和本命令说明；需要认证、共用输出或维护指引时，再读取[共享规则](../../hithink-finance-shared/SKILL.md)。
 - 首次执行或版本变化时用 `hithink-finance schema market.history-batch --format json` 确认参数，未说明的组合规则再看命令 `--help`。
 - 远端调用先用 `auth status` 复用当前启用的 OAuth 或 API Key；首次登录默认推荐 OAuth。
+- 回源前用 `auth status` 检查连接，复用当前启用的 OAuth 或 API Key。
+- `--interval 1d --adjust none --source auto` 优先读取已确认的本地行情，并按标的和日期补查缺口。看 `meta.source` 确认实际来源，混合结果为 `mixed`。
+- `--source local` 要求全部标的有本地覆盖，全程只读本地。周线、月线和复权行情由远端计算。
 
 ## 命令
 
@@ -35,6 +38,7 @@ hithink-finance market history-batch --codes-file codes.txt --start-ms <millisec
 
 - 参数校验失败时按 `error.hint` 修正，不要猜字段名。
 - 认证失败时先用 `auth status` 检查当前方式，再按 shared 的认证流程恢复。
+- 补查失败返回整体错误。有效标的的空组仍保留。
 
 ## 批量操作说明
 

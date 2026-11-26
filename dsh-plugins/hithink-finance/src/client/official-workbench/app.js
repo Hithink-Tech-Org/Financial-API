@@ -225,7 +225,23 @@ function renderLinkage(d){
   after(barChart,$('#leaders'),(breadth.leaders||[]).filter(x=>finite(x.price_change_ratio_pct)!==null).map(x=>({label:x.name||x.thscode,value:Number(x.price_change_ratio_pct)})),{horizontal:true,percent:true});after(lineChart,$('#line'),d.series);after(klineChart,$('#kline'),d.bars);
 }
 
-const renderers={'fund-dca':renderDca,'etf-compare':renderEtf,'auction-radar':renderAuction,'limit-break':renderLimit,'hot-rank':renderHot,'dragon-anomaly':renderDragon,'stock-sector-index':renderLinkage};
+function renderLocalMarketPanel({ selection, coverage, rows }) {
+  const coverageRows = coverage.map(({ thscode, start, end, days }) =>
+    `<tr><td>${esc(thscode)}</td><td>${esc(start)}</td><td>${esc(end)}</td><td>${number(days, 0)}</td></tr>`);
+  const bars = rows.map(({ thscode, date, open, high, low, close, volume }) =>
+    `<tr><td>${esc(thscode)}</td><td>${esc(date)}</td><td>${number(open)}</td><td>${number(high)}</td>
+    <td>${number(low)}</td><td>${number(close)}</td><td>${number(volume, 0)}</td></tr>`);
+  $('#content').innerHTML = `<section class="panel">
+    <div class="panel-title"><h2>实际记录范围</h2><small>${esc(selection.start)} 至 ${esc(selection.end)}</small></div>
+    <p>起止日期和条数以本地实际记录为准。核对完整覆盖时请结合交易日历。</p>
+    ${table(['标的', '最早记录', '最新记录', '记录数'], coverageRows)}
+  </section><section class="panel">
+    <div class="panel-title"><h2>未复权日线明细</h2><small>本地数据 · ${number(rows.length, 0)} 条</small></div>
+    ${table(['标的', '交易日', '开盘价（元）', '最高价（元）', '最低价（元）', '收盘价（元）', '成交量（股）'], bars)}
+  </section>`;
+}
+
+const renderers={'fund-dca':renderDca,'etf-compare':renderEtf,'auction-radar':renderAuction,'limit-break':renderLimit,'hot-rank':renderHot,'dragon-anomaly':renderDragon,'stock-sector-index':renderLinkage,'local-market-panel':renderLocalMarketPanel};
 
 export function renderBoard(page, data, params) {
   const selectedTab = $('[data-table-target][aria-pressed="true"]')?.dataset.tableTarget;

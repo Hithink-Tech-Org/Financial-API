@@ -16,9 +16,8 @@ import { redactText } from '../infrastructure/credentials/redact.js';
  * 挂载在每个成功结果信封上的元数据。
  */
 export interface ResultMeta {
-  /** Data origin: `local` for DuckDB, `remote` for the upstream API.
-   *  数据来源：`local` 表示本地 DuckDB，`remote` 表示远端 API。 */
-  source?: 'local' | 'remote';
+  /** Data origin: DuckDB, the upstream API, or both. */
+  source?: 'local' | 'remote' | 'mixed';
   /** Number of top-level items in the `data` payload.
    *  `data` 负载中的顶层条目数量。 */
   count?: number;

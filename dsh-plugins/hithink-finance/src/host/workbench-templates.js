@@ -6,6 +6,7 @@ const gallery = 'https://fuyao.aicubes.cn/best-practices/';
 const assets = new Map();
 
 export const workbenchTemplates = galleryCases.map(({ id, title, category, summary, prompt, exampleUrl }) => {
+  if (!exampleUrl) return { id, title, category, description: summary, prompt, dataMode: 'live', applicable: false };
   const relative = exampleUrl.slice(gallery.length);
   const sample = /^(\d{2}-[a-z0-9-]+)\/example\.html$/.exec(relative)?.[1];
   const online = /^dynamic\/\?page=([a-z0-9-]+)$/.exec(relative)?.[1];

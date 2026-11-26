@@ -494,6 +494,7 @@ body[data-ds-dark-theme] .hf-wb-frame, :root[data-ds-dark-theme] .hf-wb-frame { 
   .hf-wb-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 32px; }
   .hf-wb-settings > header { grid-column: 1 / -1; }
   .hf-wb-settings > section + section { padding-inline-start: 24px; border-inline-start: 1px solid var(--hf-border); }
+  .hf-wb-settings > .hf-wb-data-settings { grid-column: 1 / -1; padding-inline-start: 0; border-inline-start: 0; }
 }
 
 @container (360px <= width < 540px) {

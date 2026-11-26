@@ -3,12 +3,14 @@ import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const CLI_PACKAGE = '@hithink-tech/hithink-finance-cli';
 const MAX_CAPTURE = 128 * 1024;
 const AUTH_ORIGIN = 'https://upass.10jqka.com.cn';
 const CALLBACK = 'http://127.0.0.1:18765/oauth/callback';
+const dataProcess = fileURLToPath(new URL('./data-cli-process.js', import.meta.url));
 
 export class FinanceError extends Error {
   constructor(code, message, requestId) {
@@ -49,7 +51,7 @@ export function requestId(value) {
 
 function cliError(envelope) {
   const raw = envelope.error;
-  const code = typeof raw?.code === 'string' && /^(?:(?:AUTH|CLI|UPSTREAM|LOCAL)_[A-Z0-9_]{1,75}|FUYAO_\d{1,10})$/.test(raw.code)
+  const code = typeof raw?.code === 'string' && /^(?:(?:AUTH|CLI|UPSTREAM|LOCAL|DATA|DB)_[A-Z0-9_]{1,75}|FUYAO_\d{1,10})$/.test(raw.code)
     ? raw.code
     : 'FINANCE_CLI_ERROR';
   const message = messages[code] ?? (code.startsWith('AUTH_STORAGE_')
@@ -111,9 +113,11 @@ export function authorizationUrl(line) {
 export function createCliRunner({ resolvePackage = resolveCliPackage, spawnProcess = spawn } = {}) {
   let cli;
   const getPackage = () => (cli ??= resolvePackage());
-  function run(argv, { signal, timeoutMs = 45_000, onLine, stdin, maxCaptureBytes = MAX_CAPTURE } = {}) {
+  function run(argv, {
+    signal, timeoutMs = 45_000, onLine, stdin, maxCaptureBytes = MAX_CAPTURE, maintenance = false,
+  } = {}) {
     if (signal?.aborted) return Promise.reject(cancelled());
-    const { entry } = getPackage();
+    const { entry, directory } = getPackage();
     const env = {
       ...process.env,
       HITHINK_FINANCE_NO_UPDATE_CHECK: '1',
@@ -126,8 +130,11 @@ export function createCliRunner({ resolvePackage = resolveCliPackage, spawnProce
     return new Promise((resolveRun, reject) => {
       let child;
       try {
-        child = spawnProcess(process.execPath, [entry, ...argv, '--format', 'json', '--no-input'], {
-          env, shell: false, windowsHide: true, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+        const processArguments = maintenance ? [dataProcess, resolve(directory, 'dist/cli/run.js')] : [entry];
+        const stdio = [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'];
+        if (maintenance) stdio.push('ipc');
+        child = spawnProcess(process.execPath, [...processArguments, ...argv, '--format', 'json', '--no-input'], {
+          env, shell: false, windowsHide: true, stdio,
         });
       } catch {
         reject(new FinanceError('FINANCE_CLI_START_FAILED', '无法启动金融数据 CLI。请检查插件安装和 Node.js 版本。'));
@@ -145,12 +152,18 @@ export function createCliRunner({ resolvePackage = resolveCliPackage, spawnProce
       const stop = (error) => {
         if (failure) return;
         failure = error;
+        // Windows signals can terminate Node before the CLI has finalized an import.
+        if (maintenance) {
+          if (child.connected) child.send('cancel', () => {});
+          return;
+        }
         child.kill('SIGTERM');
         force = setTimeout(() => child.kill('SIGKILL'), 3000);
         force.unref?.();
       };
       const cancel = () => stop(cancelled());
-      const timer = setTimeout(() => stop(new FinanceError('FINANCE_TIMEOUT', '账号操作超时。请重试。')), timeoutMs);
+      const timer = setTimeout(() => stop(new FinanceError('FINANCE_TIMEOUT',
+        maintenance ? '本地数据操作超时。请重试。' : '账号操作超时。请重试。')), timeoutMs);
       timer.unref?.();
       function consume(chunks, chunk) {
         if (failure) return;

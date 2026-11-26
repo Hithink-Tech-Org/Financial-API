@@ -191,12 +191,19 @@ const cases = [
     example: 'dynamic/?page=stock-sector-index',
     task: '搜一只 A 股，选择可核实的所属板块和宽基指数。用相同交易日和基期对比三条累计收益曲线，并展示当前板块成分股涨跌分布。注明成分日期和收益口径，缺失交易日留空。',
   },
+  {
+    id: 'local-market-panel',
+    title: '本地市场数据面板',
+    category: research,
+    summary: '从本地数据库读取所选 A 股的未复权日线，查看实际记录日期和缺少本地记录的标的。',
+    task: '使用本地数据查询指定 A 股在选定区间的未复权日线。按标的标明实际记录区间和条数，仅在有本地记录时展示价格与成交量。',
+  },
 ];
 
 export const galleryCases = cases.map(({ example, task, ...item }) => {
-  const exampleUrl = 'https://fuyao.aicubes.cn/best-practices/' + example;
+  const exampleUrl = example && 'https://fuyao.aicubes.cn/best-practices/' + example;
   const intro = `请用真实数据制作名为「${item.title}」的看板，并保存到同花顺金融数据工作台。`;
-  const refresh = example.startsWith('dynamic/') ? '看板数据可手动刷新。' : '';
+  const refresh = !example || example.startsWith('dynamic/') ? '看板数据可手动刷新。' : '';
   const prompt = `${intro}\n\n${task}${refresh}`;
   return { ...item, exampleUrl, prompt };
 });

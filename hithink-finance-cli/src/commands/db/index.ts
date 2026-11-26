@@ -8,11 +8,11 @@
  * - `db query`   — 执行只读 SQL 查询并以指定格式输出结果
  * - `db export`  — 执行 SQL 查询并将结果导出为文件（ndjson / csv / parquet）
  *
- * 所有查询均为只读（通过 {@link queryReadOnly} / {@link exportQuery}），
- * 不会对数据库造成任何修改。查询前自动执行 schema 迁移以保持兼容性。
+ * `db query` 以只读模式打开已有数据库。`db describe` 会先应用普通迁移。
  */
 
 import type { Command } from 'commander';
+import { stat } from 'node:fs/promises';
 import type { CliContext } from '../../cli/context.js';
 import { localizeText } from '../../cli/i18n.js';
 import { exportQuery, queryReadOnly } from '../../application/use-cases/local-query.js';
@@ -82,7 +82,37 @@ export function registerDbCommands(program: Command, context: CliContext, fallba
     .description(localizeText(context.language, 'Run a read-only SQL query'))
     .requiredOption('--sql <sql>');
   query.action(async () => {
-    const opened = await openDatabase(databasePath(query, fallback));
+    const path = databasePath(query, fallback);
+    const info = await stat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    });
+    if (!info?.isFile())
+      throw new CliError({
+        code: 'DATA_INITIALIZATION_REQUIRED',
+        category: 'local-data',
+        message: 'The local database does not exist.',
+        hint: 'Run data init or select an existing database with --db.',
+        retryable: false,
+        exitCode: 5,
+      });
+    const opened = await openDatabase(path, { readOnly: true }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : '';
+      if (
+        /could not (?:set|acquire) lock|conflicting lock|being used by another process/i.test(
+          message,
+        )
+      )
+        throw new CliError({
+          code: 'DATA_LOCKED',
+          category: 'local-data',
+          message: 'The local database is in use by another process.',
+          hint: 'Wait for the local operation to finish, then retry.',
+          retryable: true,
+          exitCode: 5,
+        });
+      throw error;
+    });
     try {
       // 执行用户提供的只读 SQL 查询
       const rows = await queryReadOnly(

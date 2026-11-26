@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>本地市场数据面板</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-page="local-market-panel">
+  <header class="mast">
+    <span class="wordmark">本地市场数据面板</span>
+    <nav id="nav"></nav>
+    <button id="refresh" class="refresh">刷新数据</button>
+  </header>
+  <main class="stage">
+    <section class="page-intro">
+      <div>
+        <h1 id="title">A 股未复权日线</h1>
+        <p>查看本地数据库里的实际记录和日期范围。</p>
+      </div>
+      <div class="status-cluster"><span id="mode"></span><span id="updated"></span><span id="countdown"></span></div>
+    </section>
+    <section id="content"></section>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

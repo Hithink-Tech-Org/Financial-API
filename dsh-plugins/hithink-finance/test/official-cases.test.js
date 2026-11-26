@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { createWorkbench } from '../src/host/workbench.js';
 import { workbenchRemote } from '../src/host/workbench-remote.js';
@@ -15,14 +18,18 @@ function service(t, run, connected = true) {
   const cli = { async run(argv, options) {
     calls.push(argv);
     if (argv[0] === 'auth') return output('auth.status', { connected });
+    if (argv[0] === 'schema') return output('schema', {
+      id: argv[1], command: argv[1].split('.'), options: [], local_history_coverage: 'trading-calendar',
+    });
     assert.equal(argv[0], '--source');
-    assert.equal(argv[1], 'remote');
-    return run(argv.slice(2, 4).join('.'), argv.slice(4), options);
+    const command = argv.slice(2, 4).join('.');
+    assert.equal(argv[1], command === 'market.history' ? 'auto' : 'remote');
+    return run(command, argv.slice(4), options);
   } };
   return { workbench: createWorkbench({ cli, signal: t.signal }), calls };
 }
 
-test('only the seven official cases can submit their fixed read-only CLI commands', async (t) => {
+test('only catalog cases can submit their fixed read-only CLI commands', async (t) => {
   const { workbench, calls } = service(t, () => assert.fail('invalid arguments reached the CLI'));
   assert(workbenchRemote.descriptors.some(({ method }) => method === 'liveCase'));
   for (const input of [
@@ -35,6 +42,9 @@ test('only the seven official cases can submit their fixed read-only CLI command
     { id: 'fund-dca', credential: 'unsafe' },
     { id: 'limit-break', params: { date: '2026-02-30' } },
     { id: 'stock-sector-index', params: { stock: '600019.SH', command: 'auth.logout' } },
+    { id: 'local-market-panel', params: { stocks: "' OR true --" } },
+    { id: 'local-market-panel', params: { sql: 'SELECT 1' } },
+    { id: 'local-market-panel', params: { start: '2026-01-01', end: '2026-02-01' } },
   ]) assert.equal((await workbench.liveCase(input)).error.code, 'FINANCE_WORKBENCH_INVALID_QUERY');
   assert.deepEqual(calls, []);
   const disconnected = service(t, () => assert.fail('an unauthenticated request reached data transport'), false);
@@ -115,6 +125,12 @@ test('linkage matches index snapshots by code and separates flat and missing quo
   const index = '000300.SH';
   const others = ['600001.SH', '600002.SH', '600003.SH'];
   const { workbench } = service(t, (command, options) => {
+    if (command === 'market.history') {
+      assert.ok(options.includes('none'));
+      return output(command, { item: [
+        { date_ms: anchor, open_price: 10, high_price: 11, low_price: 9, close_price: 10, volume: 200 },
+      ] }, { source: 'local' });
+    }
     if (command === 'index.snapshot') return output(command, { item: [
       { thscode: index, price_change_ratio_pct: -1 }, { thscode: sector, price_change_ratio_pct: 0.5 },
     ] });
@@ -126,7 +142,7 @@ test('linkage matches index snapshots by code and separates flat and missing quo
       ] });
     return output(command, { item: [] });
   });
-  const { data } = await workbench.liveCase({ id: 'stock-sector-index' });
+  const { data } = await workbench.liveCase({ id: 'stock-sector-index', params: { adjust: 'none' } });
   assert.equal(data.quotes.sector.price_change_ratio_pct, 0.5);
   assert.equal(data.quotes.index.price_change_ratio_pct, -1);
   const { leaders, ...breadth } = data.breadth;
@@ -134,7 +150,43 @@ test('linkage matches index snapshots by code and separates flat and missing quo
     total: 4, limit: 50, scope: 'first-eligible-constituents', ratio: 33.3 });
   assert.equal(leaders.length, 3);
   assert.equal(data.membership.verified, true);
+  assert.equal(data.freshness.find(({ command }) => command === 'market.history').source, 'local');
+  assert.equal(data.freshness.find(({ command }) => command === 'index.history').source, 'remote');
+  assert.equal(data.selection.adjust, 'none');
+  assert.equal(data.bars[0].close, 10);
   assert.equal(data.status, 'partial');
+});
+
+test('local market panel works signed out and reports actual records by symbol', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-finance-market-panel-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const database = join(directory, 'market.duckdb');
+  await writeFile(database, '');
+  const calls = [];
+  const cli = { async run(argv) {
+    calls.push(argv);
+    if (argv[0] === 'config') return output('config.show', { db_path: database });
+    assert.deepEqual(argv.slice(0, 7), ['--db', database, '--source', 'local', 'db', 'query', '--sql']);
+    assert.match(argv[7], /raw_kline_daily WHERE thscode IN \('600519\.SH', '000001\.SZ'\)/);
+    assert.match(argv[7], /BETWEEN DATE '2026-01-01' AND DATE '2026-01-03'/);
+    assert.match(argv[7], /LIMIT 180$/);
+    return output('db.query', [{ thscode: '600519.SH', date: '2026-01-02', close: 100 }], { source: undefined });
+  } };
+  const workbench = createWorkbench({ cli, signal: t.signal });
+  const input = { id: 'template:local-market-panel', params: { stocks: '600519.sh, 000001.sz',
+    start: '2026-01-01', end: '2026-01-03' } };
+  const { data } = await workbench.liveCase(input);
+  assert.deepEqual(calls.map(([arg]) => arg), ['config', '--db']);
+  assert.equal(data.status, 'partial');
+  assert.equal(data.freshness[0].source, 'local');
+  assert.deepEqual(data.coverage, [
+    { thscode: '600519.SH', days: 1, start: '2026-01-02', end: '2026-01-02' },
+    { thscode: '000001.SZ', days: 0, start: null, end: null },
+  ]);
+  await rm(database);
+  const unavailable = await workbench.liveCase(input);
+  assert.equal(unavailable.error.code, 'FINANCE_WORKBENCH_LOCAL_UNAVAILABLE');
+  assert.deepEqual(calls.map(([arg]) => arg), ['config', '--db', 'config']);
 });
 
 test('a broad sector reports limited quote coverage and the full constituent count', async (t) => {

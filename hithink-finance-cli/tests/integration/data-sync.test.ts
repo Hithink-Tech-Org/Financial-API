@@ -163,8 +163,28 @@ test('finishes factors, release metadata, and quality checks before reporting la
     );
     const klineBytes = await readFile(klinePath);
     const eventBytes = await readFile(eventsPath);
+    const calendarDates = ['2025-01-02', '2025-01-03'].map((date) =>
+      Date.parse(`${date}T00:00:00+08:00`),
+    );
+    const calendarThrough = Date.parse('2025-01-04T00:00:00+08:00');
+    const calendarSnapshot = JSON.stringify({ days: calendarDates, through: calendarThrough });
+    let calendarAvailable = true;
     const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const url = String(input);
+      if (url.endsWith('/calendar/trading-days')) {
+        if (!calendarAvailable) return new Response(null, { status: 503 });
+        return Response.json({
+          code: 0,
+          message: 'ok',
+          data: {
+            timestamp: calendarThrough,
+            item: [
+              { date_ms: calendarDates[0], date: '20250102' },
+              { date_ms: calendarDates[1], date: '20250103' },
+            ],
+          },
+        });
+      }
       if (url.includes('/daily-k/download-url')) {
         return Response.json({
           code: 0,
@@ -194,12 +214,15 @@ test('finishes factors, release metadata, and quality checks before reporting la
     ).rejects.toMatchObject({ code: 'CLI_CANCELLED' });
 
     const state = await target.connection.runAndReadAll(
-      "SELECT (SELECT count(*) FROM raw_kline_daily), (SELECT count(*) FROM calc_adjust_factor_daily), (SELECT value FROM _meta WHERE key='last_kline_release_id')",
+      `SELECT (SELECT count(*) FROM raw_kline_daily), (SELECT count(*) FROM calc_adjust_factor_daily),
+         (SELECT value FROM _meta WHERE key='last_kline_release_id'),
+         (SELECT value FROM _meta WHERE key='market_history_calendar')`,
     );
-    expect(state.getRowsJson()[0]).toEqual(['2', '2', 'kline-r2/parquet']);
+    expect(state.getRowsJson()[0]).toEqual(['2', '2', 'kline-r2/parquet', calendarSnapshot]);
     expect(qualityChecked.value).toBe(true);
 
     await target.connection.run("DELETE FROM raw_kline_daily WHERE date = DATE '2025-01-03'");
+    calendarAvailable = false;
     const resynced = await syncDataFromFuyao(target.connection, {
       baseUrl: 'https://fuyao.example',
       auth: { method: 'api-key', apiKey, source: 'explicit', profile: 'default' },
@@ -208,6 +231,10 @@ test('finishes factors, release metadata, and quality checks before reporting la
     });
     expect(resynced.decision).toBe('FULL');
     expect(resynced.factorRows).toBe(2);
+    const calendar = await target.connection.runAndReadAll(
+      "SELECT value FROM _meta WHERE key='market_history_calendar'",
+    );
+    expect(calendar.getRowsJson()).toEqual([[calendarSnapshot]]);
   } finally {
     vi.unstubAllGlobals();
     fixture.close();

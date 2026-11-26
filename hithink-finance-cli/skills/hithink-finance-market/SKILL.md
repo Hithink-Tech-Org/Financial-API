@@ -18,18 +18,18 @@ description: '通过 hithink-finance CLI 查询 A 股实时价格、行情快照
 
 ## 快速决策
 
-| 用户意图                                   | 首选命令 / 路由                                                   |
-| ------------------------------------------ | ----------------------------------------------------------------- |
-| 单票历史日线/K 线                          | `market history`；`--source auto` 会在本地覆盖时走本地            |
-| 多只 A 股历史 K 线                         | `market history-batch --thscodes <codes>`；每批最多 10 个原始代码 |
-| 实时或分页行情快照                         | `market snapshot`                                                 |
-| 集合竞价实时/终态快照                      | `market auction-snapshot`                                         |
-| 集合竞价短期基准                           | `market auction-benchmark`                                        |
-| 交易日历                                   | `market calendar`                                                 |
-| 复权因子                                   | `market adjustment-factors`                                       |
-| 公司行动/除权除息事件                      | `market corporate-actions`                                        |
-| 全市场区间面板/批量研究输入                | `market panel --output <file>`                                    |
-| 涨跌停池、炸板池、连板、热股、龙虎榜、异动 | 切到 `hithink-finance-special-data`                               |
+| 用户意图                                   | 首选命令 / 路由                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| 单票历史日线/K 线                          | `market history`；`--adjust none --source auto` 在日历与行情均覆盖时走本地                  |
+| 多只 A 股历史 K 线                         | `market history-batch --thscodes <codes>`；不复权日线可补查本地缺口，每批最多 10 个原始代码 |
+| 实时或分页行情快照                         | `market snapshot`                                                                           |
+| 集合竞价实时/终态快照                      | `market auction-snapshot`                                                                   |
+| 集合竞价短期基准                           | `market auction-benchmark`                                                                  |
+| 交易日历                                   | `market calendar`                                                                           |
+| 复权因子                                   | `market adjustment-factors`                                                                 |
+| 公司行动/除权除息事件                      | `market corporate-actions`                                                                  |
+| 全市场区间面板/批量研究输入                | `market panel --output <file>`                                                              |
+| 涨跌停池、炸板池、连板、热股、龙虎榜、异动 | 切到 `hithink-finance-special-data`                                                         |
 
 ## Shortcuts
 

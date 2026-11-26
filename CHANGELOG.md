@@ -8,6 +8,11 @@
 - 新增独立的 `hithink-finance-mcp`，提供 MCP 配置、业务域与 tool 选路；按业务分类合并文档，每个工具小节包含参数、返回字段及关联结构。
 - CLI 0.2.0 的领域 Skills 独立随包交付，description 负责首选路由，shared 提供通用规则和辅助选路。
 
+## 2026-11-26 — CLI 0.2.6
+
+- A 股不复权日线按交易日历检查本地覆盖。批量查询保留本地已有记录，按标的和日期补查缺口，并标明数据来源。 [CLI 更新日志](hithink-finance-cli/CHANGELOG.md)
+- 本地库同步保存交易日历。只读 SQL 可直接查询已有数据库，数据维护会协调并发写入。
+
 ## 2026-11-26 — CLI 0.2.5 与 DeepSeek Harness 插件 0.1.0
 
 - CLI 新增基金最新净值查询，区间收益和回撤支持批量查询，每次最多 20 只基金。 [基金业绩接口](docs/api/fund/fund-performance.md) · [CLI 更新日志](hithink-finance-cli/CHANGELOG.md)

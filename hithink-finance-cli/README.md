@@ -147,7 +147,7 @@ hithink-finance db query --sql "SELECT * FROM v_daily_qfq LIMIT 10" --format jso
 
 ## 输出与错误语义
 
-远端取数命令默认使用用户级本地查询 worker，命令写法保持一致。首次调用按需启动，后续独立命令复用已加载模块和HTTP连接；空闲约120秒后退出。每次请求重新读取当前配置和凭据，认证切换/退出对后续请求生效。帮助、版本、认证、维护及数据库命令在前台执行；`market history` 显式使用 `--source remote` 时可复用。
+远端取数命令默认使用用户级本地查询 worker，命令写法保持一致。首次调用按需启动，后续独立命令复用已加载模块和 HTTP 连接，空闲约 120 秒后退出。每次请求重新读取当前配置和凭据，认证切换或退出对后续请求生效。帮助、版本、认证、维护及数据库命令在前台执行。`market history` 和 `market history-batch` 显式使用 `--source remote` 时可复用 worker。
 
 ```bash
 hithink-finance worker status --format json
@@ -197,6 +197,9 @@ hithink-finance market history-batch --thscodes 600519.SH,000001.SZ \
 
 `--source auto|local|remote` 控制支持该选项的行情路由。只有具体命令声明的 `--output <path>` 才能直接落盘，它不是全局选项。
 
+- A 股不复权日线使用 `--adjust none`。单标的 `auto` 在交易日历和本地行情均覆盖时使用本地数据，否则整段查询远端。批量日线可保留已确认的本地行情，按标的和日期补查缺口。补查失败返回整体错误。查看 `meta.source` 判断结果来自 `local`、`remote` 或 `mixed`。
+- `local` 全程只读本地。已确认无交易日的区间返回空结果，覆盖不足时返回 `DATA_INITIALIZATION_REQUIRED`。本地行情使用 `--adjust none`。包含交易日的复权行情，以及周线、月线，由远端计算。单标的日线命中本地时，`data` 保持 DuckDB 记录数组格式。远端单标的返回 `data.item`，批量日线按标的分组。
+
 ```bash
 hithink-finance market panel \
   --start 2026-01-01 --end 2026-01-31 \
@@ -226,6 +229,8 @@ hithink-finance db describe --format json
 严格只读研究先用文件系统确认目标数据库存在并固定 `--db` 路径，再查看 `data status` 和 `data migrate` 的默认迁移计划。仅在计划的 `data.versions` 为空时运行 `data validate`；有待执行迁移时先报告维护需求。`data status` 可创建缺失数据库，`data validate` 和 `db describe` 会应用普通迁移，因此不用于直接探测未知目标。表结构可用 `db query` 查询 `information_schema`。
 
 远端初始化和同步下载数据包时，交互终端会在 stderr 动态刷新进度；stderr 被重定向时会输出开始、完成及节流后的进度日志（至少相隔 5 秒且新增 8 MiB）。无论何种模式，`--format json` 的结果信封都只写入 stdout。
+
+远端初始化和同步会尝试保存经过验证的交易日历。日历服务暂不可用时，行情同步可继续并保留上次有效的日历覆盖。
 
 下载校验在流式写盘过程中增量计算 SHA-256，不会为了哈希再次把完整 dump 读入内存。DuckDB 默认最多使用 4 个线程，内存上限按系统内存的 50% 计算并限制在 256 MiB 至 4 GiB，以满足带主键索引的增量导入与事务提交；可用 `HITHINK_FINANCE_DUCKDB_THREADS` 和 `HITHINK_FINANCE_DUCKDB_MEMORY_LIMIT`（例如 `2GiB`）覆盖。只读查询会响应终止信号；数据导入提交后仍先完成复权、元数据和质量一致性收尾。
 

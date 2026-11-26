@@ -73,6 +73,7 @@ import { applyMigrations } from '../../infrastructure/duckdb/migrations.js';
 import { rebuildAdjustmentFactors } from '../../infrastructure/duckdb/factors.js';
 import { validateDatabase } from '../../infrastructure/duckdb/quality.js';
 import { throwIfCancelled } from '../../contracts/errors.js';
+import { fetchMarketCalendar, saveMarketCalendar } from './market-calendar.js';
 
 /** Fuyao 同步操作的配置选项 */
 export interface FuyaoSyncOptions {
@@ -145,6 +146,7 @@ export async function syncDataFromFuyao(
   throwIfCancelled(options.signal);
   // 服务端可能复用下载路径。重复同步可导入更正并补齐本地缺失记录。
   const events = await fetchFuyaoDump({ ...options, kind: 'adjustment-factors' });
+  const calendar = await fetchMarketCalendar(options);
   throwIfCancelled(options.signal);
   // 步骤 6：确定同步模式并构造 batchId（时间戳，用于去重和追踪）
   const decision: SyncDecision = kind === 'daily-k' ? 'FULL' : 'INCREMENTAL';
@@ -170,6 +172,7 @@ export async function syncDataFromFuyao(
   );
   // 步骤 8：完成质量校验后再响应写入临界区内到达的取消信号。
   const quality = await validateDatabase(connection);
+  if (calendar) await saveMarketCalendar(connection, calendar);
   throwIfCancelled(options.signal);
   return {
     decision,

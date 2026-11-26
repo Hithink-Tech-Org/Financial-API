@@ -14,8 +14,12 @@
  * - 'backward' → v_daily_hfq（后复权）
  */
 import type { DuckDBConnection } from '@duckdb/node-api';
+import { z } from 'zod';
 import { queryReadOnly } from './local-query.js';
 import { withDuckDbInterrupt } from '../../infrastructure/duckdb/connection.js';
+import { CliError } from '../../contracts/errors.js';
+import type { FuyaoSuccess } from '../../infrastructure/fuyao/client.js';
+import { dayMs, readMarketCalendar, shanghaiDate, shanghaiDay } from './market-calendar.js';
 
 /**
  * 查询指定股票的日线行情历史。
@@ -58,98 +62,37 @@ export async function getHistory(
   );
 }
 
-const day = 86_400_000;
-const shanghaiOffset = 8 * 3_600_000;
-
-function weekday(date: number, direction: -1 | 1): string {
-  const utcDay = new Date(date).getUTCDay();
-  if (utcDay === 0) date += day * (direction === 1 ? 1 : -2);
-  if (utcDay === 6) date += day * (direction === 1 ? 2 : -1);
-  return new Date(date).toISOString().slice(0, 10);
+export interface DailyHistoryRequest {
+  thscodes: readonly string[];
+  startMs: number;
+  endMs: number;
+  adjust: 'none' | 'forward' | 'backward';
 }
 
-export async function symbolsEligibleForRawForwardHistory(
-  connection: DuckDBConnection,
-  { thscodes, start }: { thscodes: readonly string[]; start: string },
-  signal: AbortSignal,
-): Promise<ReadonlySet<string>> {
-  // A later corporate action can reprice earlier bars. Use raw prices only with a current dump.
-  const proof = await withDuckDbInterrupt(connection, signal, () =>
-    connection.runAndReadAll(
-      `SELECT requested.thscode FROM (SELECT unnest(string_split($codes, ',')) AS thscode) requested
-       WHERE (SELECT max(date) FROM raw_kline_daily) >= $latest_required::DATE
-         AND EXISTS (SELECT 1 FROM _meta WHERE key = 'last_adjustment_release_id')
-         AND NOT EXISTS (SELECT 1 FROM raw_adjustment_events
-           WHERE ex_date >= $start::DATE AND thscode = requested.thscode)`,
-      {
-        codes: thscodes.join(','),
-        start,
-        latest_required: weekday(Date.now() + shanghaiOffset, -1),
-      },
-    ),
-  );
-  return new Set(
-    proof.getRowsJson().flatMap(([symbol]) => (typeof symbol === 'string' ? [symbol] : [])),
-  );
+const barSchema = z.object({ date_ms: z.number().int().nonnegative() }).passthrough();
+type HistoryBar = z.infer<typeof barSchema>;
+const batchSchema = z.object({
+  interval: z.literal('1d'),
+  adjust: z.literal('none'),
+  item: z.array(
+    z.object({
+      thscode: z.string(),
+      timestamp: z.number().int().nonnegative().nullable(),
+      item: z.array(barSchema),
+    }),
+  ),
+});
+
+interface LocalHistory {
+  firstKnown: number;
+  lastKnown: number;
+  sessions: number[];
+  bars: Map<string, Map<number, HistoryBar>>;
+  singleRows?: Record<string, unknown>[];
 }
 
-/**
- * Return an empty result for a confirmed no-bar window, or undefined when local coverage is uncertain.
- * The coverage check can only see dates present in the market-wide data.
- */
-export async function readCompatibleHistory(
-  connection: DuckDBConnection,
-  request: {
-    thscodes: readonly string[];
-    startMs: number;
-    endMs: number;
-    adjust: 'none' | 'forward' | 'backward';
-  },
-  signal: AbortSignal,
-): Promise<Record<string, unknown>[] | undefined> {
-  const { thscodes, startMs, endMs, adjust } = request;
-  const firstBar = Math.ceil((startMs + shanghaiOffset) / day) * day;
-  const lastBar = Math.floor((endMs + shanghaiOffset) / day) * day;
-  const start = new Date(firstBar).toISOString().slice(0, 10);
-  const end = new Date(lastBar).toISOString().slice(0, 10);
-  const params = { start, end, codes: thscodes.join(',') };
-  const coverage = await withDuckDbInterrupt(connection, signal, () =>
-    connection.runAndReadAll(
-      `SELECT min(date)::VARCHAR, max(date)::VARCHAR,
-          (SELECT count(DISTINCT thscode)::INTEGER FROM raw_kline_daily
-            WHERE thscode IN (SELECT unnest(string_split($codes, ',')))),
-          (SELECT count(DISTINCT date)::INTEGER FROM raw_kline_daily
-            WHERE date BETWEEN $start::DATE AND $end::DATE)
-        FROM raw_kline_daily`,
-      params,
-    ),
-  );
-  const [earliest, latest, known, sessions] = coverage.getRowsJson()[0] ?? [];
-  if (
-    typeof earliest !== 'string' ||
-    typeof latest !== 'string' ||
-    known !== thscodes.length ||
-    typeof sessions !== 'number' ||
-    (firstBar > lastBar ? earliest > end : earliest > weekday(firstBar, 1)) ||
-    latest < weekday(lastBar, -1)
-  )
-    return undefined;
-  if (sessions === 0) return firstBar > lastBar || weekday(firstBar, 1) > end ? [] : undefined;
-  if (adjust === 'backward') return undefined;
-  if (adjust === 'forward') {
-    const eligible = await symbolsEligibleForRawForwardHistory(
-      connection,
-      { thscodes, start },
-      signal,
-    );
-    if (eligible.size !== thscodes.length) return undefined;
-  }
-  const rows = await getHistory(connection, { thscodes, start, end, adjust: 'none' }, signal);
-  return rows.length === sessions * thscodes.length ? rows : undefined;
-}
-
-export function restHistoryData(rows: readonly Record<string, unknown>[]) {
-  const item = rows.map((row) => ({
+function historyBar(row: Record<string, unknown>): HistoryBar {
+  return {
     date_ms: Date.parse(String(row.date) + 'T00:00:00+08:00'),
     open_price: row.open,
     high_price: row.high,
@@ -157,6 +100,212 @@ export function restHistoryData(rows: readonly Record<string, unknown>[]) {
     close_price: row.close,
     volume: row.volume,
     turnover: row.amount,
-  }));
-  return { timestamp: item.at(-1)?.date_ms ?? null, item };
+  };
+}
+
+export async function readLocalHistory(
+  connection: DuckDBConnection,
+  request: DailyHistoryRequest,
+  signal: AbortSignal,
+): Promise<LocalHistory | undefined> {
+  const { thscodes, startMs, endMs, adjust } = request;
+  const snapshot = await readMarketCalendar(connection, signal);
+  if (!snapshot) return undefined;
+  const calendar = snapshot.days;
+  const firstKnown = calendar[0]!;
+  const lastKnown = snapshot.through;
+  if (shanghaiDay(startMs) > lastKnown || endMs < firstKnown) return undefined;
+  const sessions = calendar.filter((date) => date >= startMs && date <= endMs);
+  // Dump release identifiers do not attest adjustment event coverage through the pricing date.
+  if (sessions.length > 0 && adjust !== 'none') return undefined;
+
+  const known = await withDuckDbInterrupt(connection, signal, () =>
+    connection.runAndReadAll(
+      `SELECT thscode FROM dim_symbol
+         WHERE asset_type='a-share' AND thscode IN (SELECT unnest(string_split($codes, ',')))
+       UNION
+       SELECT DISTINCT thscode FROM raw_kline_daily
+         WHERE thscode IN (SELECT unnest(string_split($codes, ',')))`,
+      { codes: thscodes.join(',') },
+    ),
+  );
+  const bars: LocalHistory['bars'] = new Map();
+  for (const [code] of known.getRowsJson()) {
+    if (typeof code === 'string') bars.set(code, new Map());
+  }
+  if (sessions.length === 0 || bars.size === 0) return { firstKnown, lastKnown, sessions, bars };
+  const rows = await getHistory(
+    connection,
+    {
+      thscodes,
+      start: shanghaiDate(sessions[0]!),
+      end: shanghaiDate(sessions.at(-1)!),
+      adjust: 'none',
+    },
+    signal,
+  );
+  const expected = new Set(sessions);
+  for (const row of rows) {
+    const bar = historyBar(row);
+    if (!expected.has(bar.date_ms)) return undefined;
+    bars.get(String(row.thscode))?.set(bar.date_ms, bar);
+  }
+  return {
+    firstKnown,
+    lastKnown,
+    sessions,
+    bars,
+    ...(thscodes.length === 1 && { singleRows: rows }),
+  };
+}
+
+interface Gap {
+  startMs: number;
+  endMs: number;
+  thscodes: string[];
+}
+
+function historyGaps(
+  { thscodes, startMs, endMs }: DailyHistoryRequest,
+  { firstKnown, lastKnown, sessions, bars }: LocalHistory,
+): Gap[] {
+  const gaps = new Map<string, Gap>();
+  function add(code: string, first: number, last: number) {
+    const key = `${first}:${last}`;
+    const existing = gaps.get(key);
+    if (existing) existing.thscodes.push(code);
+    else gaps.set(key, { startMs: first, endMs: last, thscodes: [code] });
+  }
+  for (const code of thscodes) {
+    const series = bars.get(code);
+    if (!series) {
+      add(code, startMs, endMs);
+      continue;
+    }
+    if (startMs < firstKnown) add(code, startMs, firstKnown - 1);
+    let first: number | undefined;
+    let last: number | undefined;
+    for (const day of sessions) {
+      if (!series.has(day)) {
+        first ??= day;
+        last = day;
+      } else if (first !== undefined) {
+        add(code, first, last!);
+        first = undefined;
+      }
+    }
+    if (first !== undefined) add(code, first, last!);
+    if (endMs >= lastKnown + dayMs) add(code, lastKnown + dayMs, endMs);
+  }
+  return [...gaps.values()];
+}
+
+function invalidBatch(message: string, requestId?: string): CliError {
+  return new CliError({
+    code: 'UPSTREAM_INVALID_RESPONSE',
+    category: 'upstream',
+    message,
+    hint: 'Retry later and retain the request ID when reporting a persistent failure.',
+    exitCode: 4,
+    retryable: false,
+    ...(requestId === undefined ? {} : { requestId }),
+  });
+}
+
+function historySeries(bars: Map<number, HistoryBar>, remoteTimes?: Map<number, number | null>) {
+  const item = [...bars.values()].sort((left, right) => left.date_ms - right.date_ms);
+  const latest = item.at(-1)?.date_ms;
+  const remoteTime = latest === undefined ? undefined : remoteTimes?.get(latest);
+  return { timestamp: remoteTime === undefined ? (latest ?? null) : remoteTime, item };
+}
+
+export function completeLocalHistory(
+  request: DailyHistoryRequest,
+  local: LocalHistory,
+  batch: boolean,
+) {
+  if (historyGaps(request, local).length !== 0) return undefined;
+  if (!batch) return local.singleRows ?? [];
+  return {
+    interval: '1d',
+    adjust: request.adjust,
+    item: request.thscodes.map((thscode) => ({
+      thscode,
+      ...historySeries(local.bars.get(thscode)!),
+    })),
+  };
+}
+
+export async function fillUnadjustedBatchHistory(
+  request: DailyHistoryRequest,
+  local: LocalHistory,
+  load: (gap: Gap) => Promise<FuyaoSuccess<unknown>>,
+): Promise<{ source: 'local' | 'mixed'; data: unknown; requestId?: string } | undefined> {
+  if (request.adjust !== 'none' || ![...local.bars.values()].some((series) => series.size > 0))
+    return undefined;
+  const gaps = historyGaps(request, local);
+  const sessions = new Set(local.sessions);
+  const timestamps = new Map<string, Map<number, number | null>>();
+  let requestId: string | undefined;
+  let contributed = false;
+  for (const gap of gaps) {
+    const expected = new Set(gap.thscodes);
+    let result;
+    try {
+      result = await load(gap);
+    } catch (error) {
+      if (
+        error instanceof CliError &&
+        ['FUYAO_3001', 'FUYAO_3004'].includes(error.code) &&
+        gap.thscodes.every((code) => !local.bars.has(code))
+      )
+        continue;
+      throw error;
+    }
+    requestId = result.requestId ?? requestId;
+    const parsed = batchSchema.safeParse(result.data);
+    if (!parsed.success)
+      throw invalidBatch('Invalid batch history after remote gap fill.', requestId);
+    for (const group of parsed.data.item) {
+      if (!expected.delete(group.thscode))
+        throw invalidBatch('Unexpected symbol in batch history gap fill.', requestId);
+      const rows = local.bars.get(group.thscode) ?? new Map<number, HistoryBar>();
+      const seen = new Set<number>();
+      for (const row of group.item) {
+        const inKnownCalendar = row.date_ms >= local.firstKnown && row.date_ms <= local.lastKnown;
+        if (
+          row.date_ms < gap.startMs ||
+          row.date_ms > gap.endMs ||
+          shanghaiDay(row.date_ms) !== row.date_ms ||
+          (inKnownCalendar && !sessions.has(row.date_ms)) ||
+          seen.has(row.date_ms)
+        )
+          throw invalidBatch('Invalid bar date in batch history gap fill.', requestId);
+        seen.add(row.date_ms);
+        rows.set(row.date_ms, row);
+      }
+      const latest = Math.max(...seen);
+      if (Number.isFinite(latest)) {
+        const times = timestamps.get(group.thscode) ?? new Map<number, number | null>();
+        times.set(latest, group.timestamp);
+        timestamps.set(group.thscode, times);
+      }
+      local.bars.set(group.thscode, rows);
+      contributed = true;
+    }
+    if ([...expected].some((code) => local.bars.has(code)))
+      throw invalidBatch('A known symbol is absent from batch history gap fill.', requestId);
+  }
+  return {
+    source: contributed ? 'mixed' : 'local',
+    data: {
+      interval: '1d',
+      adjust: 'none',
+      item: request.thscodes.flatMap((thscode) => {
+        const bars = local.bars.get(thscode);
+        return bars ? [{ thscode, ...historySeries(bars, timestamps.get(thscode)) }] : [];
+      }),
+    },
+    ...(requestId === undefined ? {} : { requestId }),
+  };
 }

@@ -18,7 +18,8 @@ const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const required = [
   'LICENSE', 'README.md', 'package.json', 'assets/icon.png', 'cordis.patch.yml', 'dist/client.js',
   'locale/en.json', 'locale/zh.json', 'locale/detail.en.md', 'locale/detail.zh.md',
-  'src/host/index.js', 'src/presentation/index.js',
+  'src/host/index.js', 'src/host/data-cli-process.js', 'src/host/data-management.js',
+  'src/host/data-remote.js', 'src/presentation/index.js',
   'skills/hithink-finance-dsh/SKILL.md',
   'skills/hithink-finance-dsh/references/workbench.md',
   'skills/hithink-finance-dsh/references/custom-holdings.md',
@@ -81,7 +82,7 @@ async function checkHost(prefix) {
     });
     assert.deepEqual([...tools].sort(), ['hithink_finance_render', 'hithink_finance_workbench_import']);
     for (const skill of ['hithink-finance-dsh', 'hithink-finance-market']) assert(skills.has(skill));
-    assert.equal(services.length, 2);
+    assert.equal(services.length, 3);
   } finally {
     for (const dispose of disposers.reverse()) await dispose();
   }

@@ -98,7 +98,8 @@ export function createWorkbench({ cli, profileDirectory, userHome, signal, templ
     if (inFlight.size >= maxConcurrentQueries) throw pageError('BUSY', '正在刷新其他数据，请稍后重试。');
     const operation = (async () => {
       await validateBinding(binding, request.params, []);
-      if (request.source === 'remote' || !['market.history', 'market.adjustment-factors'].includes(binding.command)) {
+      if (request.source === 'remote' ||
+        !['market.history', 'market.history-batch', 'market.adjustment-factors'].includes(binding.command)) {
         await checkRemoteAccount();
       }
       return runPageQuery(cli, binding, request, signal);
@@ -114,8 +115,8 @@ export function createWorkbench({ cli, profileDirectory, userHome, signal, templ
   function liveCase(input, invocationSignal) {
     const callSignal = invocationSignal ? AbortSignal.any([signal, invocationSignal]) : signal;
     return handle(async () => {
-      const load = officialCase(input);
-      await checkRemoteAccount();
+      const { requiresAccount, run } = officialCase(input);
+      if (requiresAccount) await checkRemoteAccount();
       if (callSignal.aborted) throw cancelled();
       if ([...activeCases].filter((item) => !item.signal.aborted).length >= maxConcurrentCases) {
         throw pageError('BUSY', '正在刷新其他官方案例，请稍后重试。');
@@ -123,7 +124,7 @@ export function createWorkbench({ cli, profileDirectory, userHome, signal, templ
       const lease = { signal: callSignal };
       activeCases.add(lease);
       try {
-        return { data: await load(cli, callSignal) };
+        return { data: await run(cli, callSignal) };
       } finally {
         activeCases.delete(lease);
       }

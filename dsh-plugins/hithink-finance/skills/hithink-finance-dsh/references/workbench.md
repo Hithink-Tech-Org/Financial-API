@@ -117,12 +117,17 @@ hithink-finance --source remote market snapshot --thscodes '600000.SH,000001.SZ'
 
 | 绑定命令 | 可选 `source` | 参数范围 |
 | --- | --- | --- |
-| `market.history` | `auto`、`remote` | 单个标的，必须指定毫秒时间区间 |
+| `market.history` | `local`、`auto`、`remote` | 单个标的，必须指定毫秒时间区间 |
+| `market.history-batch` | `local`、`auto`、`remote` | 最多 10 个标的，必须指定毫秒时间区间，周期为日线 |
 | `market.adjustment-factors` | `local`、`auto` | 单个标的，指定 `start` 和 `end` 为 `YYYY-MM-DD` |
 | `market.snapshot`、`index.snapshot`、`index.history` | `remote`、`auto` | 快照最多 12 个标的，历史行情为单个标的 |
 | `fund.snapshot`、`fund.history`、`fund.nav` | `remote`、`auto` | 单个基金 |
 | `financials.income`、`financials.balance-sheet`、`financials.cash-flow`、`financials.indicators`、`valuation.snapshot` | `remote`、`auto` | 报表及指标按单个标的查询，估值最多 12 个标的 |
 
-`market.history` 的 `auto` 由 CLI 根据本机覆盖范围选取实际来源。纯本地查询使用 `market.adjustment-factors`，例如 `{"command":"market.adjustment-factors","source":"local","params":{"thscode":"000001.SZ","start":"2026-01-01","end":"2026-01-31"}}`。使用原版数据 Skill 检查本机数据库初始化状态，此命令返回行数组，使用 `data-hf-field="data"`。首次操作需要远端数据时在「设置」完成连接。
+日线的 `auto` 由 CLI 按本地覆盖和复权口径选取实际来源。批量不复权日线可能同时使用本地和远端。用 `data-hf-field="meta.source"` 读取实际来源 `local`、`remote` 或 `mixed`。批量结果的 `data.item` 按标的分组，各组的日线位于该组的 `item`。显式要求 `local` 时，覆盖不足会提示同步或改用自动选源。
+
+纯本地复权因子查询示例为 `{"command":"market.adjustment-factors","source":"local","params":{"thscode":"000001.SZ","start":"2026-01-01","end":"2026-01-31"}}`，此命令返回行数组，使用 `data-hf-field="data"`。在「设置 → 本地数据」查看数据库状态。需要远端数据时，在「设置 → 账号连接」完成连接。
+
+在「案例游廊 → 本地市场数据面板」可选择最多 6 个 A 股标的、最多 30 个自然日，查看本地未复权日线的实际起止日期和记录数。查询直接读当前 CLI 的本地库。
 
 页面允许最多 12 个命名查询，显式起止区间为 400 天以内，支持分页的 `limit` 为 1 到 50。动态 HTML 用声明式绑定展示数据。普通单文件可使用 HTML 和 CSS 互动，含自编脚本的静态作品可在隔离预览里手动启用互动模式。页面打开和刷新通过 DSH 工作台完成。

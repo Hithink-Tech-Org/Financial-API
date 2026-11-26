@@ -276,21 +276,23 @@ export function registerDataCommands(
   data
     .command('validate')
     .description(localizeText(context.language, 'Validate local data quality'))
-    .action(async () => {
-      const db = await openDatabase(dbPath(data, paths.defaultDbPath));
-      try {
-        // 先确保 schema 是最新的，再进行质量校验
-        await applyMigrations(db.connection);
-        await renderResult(
-          successEnvelope('data.validate', await validateDatabase(db.connection), {
-            requestId: context.requestId,
-          }),
-          context,
-        );
-      } finally {
-        db.close();
-      }
-    });
+    .action(async () =>
+      withDataLock(paths, 'data.validate', remote.cliVersion, async () => {
+        const db = await openDatabase(dbPath(data, paths.defaultDbPath));
+        try {
+          // 先确保 schema 是最新的，再进行质量校验
+          await applyMigrations(db.connection);
+          await renderResult(
+            successEnvelope('data.validate', await validateDatabase(db.connection), {
+              requestId: context.requestId,
+            }),
+            context,
+          );
+        } finally {
+          db.close();
+        }
+      }),
+    );
 
   // ========== data repair ==========
   data

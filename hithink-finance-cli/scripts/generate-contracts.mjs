@@ -122,8 +122,14 @@ const domainConfigs = {
     identity:
       '普通行情和本地行情派生能力。优先使用本地库覆盖的历史/面板能力，必要时走远端同花顺金融数据服务。',
     decisions: [
-      ['单票历史日线/K 线', '`market history`；`--source auto` 会在本地覆盖时走本地'],
-      ['多只 A 股历史 K 线', '`market history-batch --thscodes <codes>`；每批最多 10 个原始代码'],
+      [
+        '单票历史日线/K 线',
+        '`market history`；`--adjust none --source auto` 在日历与行情均覆盖时走本地',
+      ],
+      [
+        '多只 A 股历史 K 线',
+        '`market history-batch --thscodes <codes>`；不复权日线可补查本地缺口，每批最多 10 个原始代码',
+      ],
       ['实时或分页行情快照', '`market snapshot`'],
       ['集合竞价实时/终态快照', '`market auction-snapshot`'],
       ['集合竞价短期基准', '`market auction-benchmark`'],
@@ -419,8 +425,19 @@ const localCommandDetails = {
   },
   'market.history': {
     preconditions: [
-      '`--source auto` 在本地覆盖时读取本地日线；远端路径先用 `auth status` 复用当前启用的 OAuth 或 API Key。可用 `--source local` 明确只读本地数据。',
+      '回源前用 `auth status` 检查连接，复用当前启用的 OAuth 或 API Key。',
+      '`--adjust none --source auto` 在交易日历和本地日线均覆盖时使用 DuckDB，否则整段查询远端。当前复权日线由远端计算。',
+      '`--source local` 全程只读本地。缺少日历、标的或行情覆盖时返回 `DATA_INITIALIZATION_REQUIRED`，已确认的无交易日区间返回空列表。',
+      '本地单标的结果的 `data` 为 DuckDB 记录数组，远端结果的记录位于 `data.item`。',
     ],
+  },
+  'market.history-batch': {
+    preconditions: [
+      '回源前用 `auth status` 检查连接，复用当前启用的 OAuth 或 API Key。',
+      '`--interval 1d --adjust none --source auto` 优先读取已确认的本地行情，并按标的和日期补查缺口。看 `meta.source` 确认实际来源，混合结果为 `mixed`。',
+      '`--source local` 要求全部标的有本地覆盖，全程只读本地。周线、月线和复权行情由远端计算。',
+    ],
+    errors: ['补查失败返回整体错误。有效标的的空组仍保留。'],
   },
   'fund.indicators-line': {
     exampleArgs: `--indexes '[{"thscodes":["000001.OF"],"index_info":[{"index_id":"rsi_pct"}]}]' --time-range '{"time_type":"DAY_1","start":1788192000000,"end":1788796800000}'`,
@@ -474,6 +491,7 @@ const localCommandDetails = {
     preconditions: [
       '需要当前可用凭据，先按 shared 查看只读 auth status，或提供本次显式 Key。',
       '命令会持有数据锁，避免并发写库。',
+      '同步会尝试保存独立交易日历供本地日线校验。日历服务暂不可用时保留上次有效覆盖。',
     ],
     parameters: ['使用全局 `--db` 指定库路径；默认路径来自平台数据目录。'],
     errors: ['认证失败时先回到 shared skill 的 auth 流程。'],
@@ -526,7 +544,9 @@ const localCommandDetails = {
   },
   'db.query': {
     exampleArgs: '--sql "<readonly sql>"',
-    preconditions: ['只读 SQL；小结果才可直接读取 JSON。'],
+    preconditions: [
+      '只读打开已存在的数据库，小结果才可直接读取 JSON。数据库被占用时等待维护完成后再查。',
+    ],
     parameters: ['必填 `--sql <sql>`；大结果改用 `db export`。'],
     errors: ['不要执行写入、DDL、删除、外部函数或会改变状态的 SQL。'],
   },
@@ -554,7 +574,7 @@ const localCommandDetails = {
 const sharedReferenceFiles = {
   'query-worker.md': `# 本地查询 worker
 
-现有远端命令默认透明复用当前系统用户、构建和环境的本地worker。首次按需启动，后续命令复用模块与HTTP连接，空闲约120秒退出；每条请求重新读取配置和凭据。帮助、认证、维护和数据库命令在前台；market history显式--source remote可复用。
+现有远端命令默认透明复用当前系统用户、构建和环境的本地 worker。首次按需启动，后续命令复用模块与 HTTP 连接，空闲约 120 秒退出。每条请求重新读取配置和凭据。帮助、认证、维护和数据库命令在前台执行。market history 和 market history-batch 显式使用 --source remote 时可复用 worker。
 
 \`\`\`bash
 hithink-finance worker status --format json

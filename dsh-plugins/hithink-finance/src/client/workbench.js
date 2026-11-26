@@ -1,6 +1,7 @@
 import { createElement as h, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { QUICK_START_PROMPT, QUICK_START_TITLE } from '../shared/quick-start.js';
 import { Account, FinancePanelIcon } from './account.js';
+import { DataSettings } from './data-settings.js';
 import { OfficialLiveBoard } from './official-live-board.js';
 import { acceptsFramePort, buildInteractiveDocument, buildOfficialSample, buildPageDocument } from './workbench-frame.js';
 
@@ -616,7 +617,7 @@ function DirectorySettings({ workbench, isVisible, pickDirectory, onChange }) {
     action.error && h('p', { className: 'hf-wb-error', role: 'alert' }, action.error));
 }
 
-function Settings({ account, workbench, isVisible, pickDirectory, onStorageChange }) {
+function Settings({ account, workbench, localData, isVisible, pickDirectory, onStorageChange }) {
   return h('div', { className: 'hf-wb-content hf-wb-settings' },
     h('header', { className: 'hf-wb-intro' }, h('h1', null, '设置')),
     h('section', null,
@@ -624,7 +625,10 @@ function Settings({ account, workbench, isVisible, pickDirectory, onStorageChang
       h(Account, { account, isVisible })),
     h('section', null,
       h('h2', null, '看板目录'),
-      h(DirectorySettings, { workbench, isVisible, pickDirectory, onChange: onStorageChange })));
+      h(DirectorySettings, { workbench, isVisible, pickDirectory, onChange: onStorageChange })),
+    h('section', { className: 'hf-wb-data-settings' },
+      h('h2', null, '本地数据'),
+      h(DataSettings, { localData, isVisible, Button })));
 }
 
 const destinations = [
@@ -645,7 +649,7 @@ const defaultRoutes = { pages, templates: gallery, docs: { view: 'docs' }, setti
 const views = { templates: TemplateList, pages: MyPages, template: TemplateDetail, edit: EditPage, page: SavedPage, settings: Settings };
 
 export function FinanceWorkbench({
-  route, navigationRevision, destination, account, workbench, drafts, boards, move, openComposer, openReference,
+  route, navigationRevision, destination, account, workbench, localData, drafts, boards, move, openComposer, openReference,
   pickDirectory, dock, isVisible = true,
 }) {
   const tabId = useId();
@@ -738,7 +742,7 @@ export function FinanceWorkbench({
         const Node = views[view] ?? views[section];
         const selected = section === active;
         const docs = section === 'docs';
-        const props = { id, directory, account, workbench, drafts, libraryRevision, navigate, createCase,
+        const props = { id, directory, account, workbench, localData, drafts, libraryRevision, navigate, createCase,
           creating: creation.id ?? referenceAction.pending, createError: creation.error, referenceBoard,
           referenceAction: { ...referenceAction, blocked: Boolean(creation.id) },
           isVisible: isVisible && selected, pickDirectory, onStorageChange, onBoardChange: boards.changed,

@@ -6,6 +6,7 @@
 - 首次执行或版本变化时用 `hithink-finance schema data.sync --format json` 确认参数，未说明的组合规则再看命令 `--help`。
 - 需要当前可用凭据，先按 shared 查看只读 auth status，或提供本次显式 Key。
 - 命令会持有数据锁，避免并发写库。
+- 同步会尝试保存独立交易日历供本地日线校验。日历服务暂不可用时保留上次有效覆盖。
 
 ## 命令
 

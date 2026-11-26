@@ -46,7 +46,7 @@ description: '通过 hithink-finance CLI 管理本地 DuckDB 数据的初始化�
 | [data validate](references/data-validate.md) | 质量检查会先应用普通迁移。严格只读研究须先确认目标文件存在，并用 data migrate 的默认计划确认 versions 为空。       |
 | [db describe](references/db-describe.md)     | 查询表和视图清单，并应用普通迁移；严格只读研究使用 db query 查询 information_schema。                              |
 | [db export](references/db-export.md)         | 用于大结果或下游 pandas/notebook 消费。                                                                            |
-| [db query](references/db-query.md)           | 只读 SQL；小结果才可直接读取 JSON。                                                                                |
+| [db query](references/db-query.md)           | 只读打开已存在的数据库，小结果才可直接读取 JSON。数据库被占用时等待维护完成后再查。                                |
 
 ## 原生命令与 schema
 

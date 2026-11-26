@@ -31,6 +31,11 @@ const fields = {
   ],
   'stock-sector-index': [
     ['stock', '个股', '600726.SH'], ['sector', '所属板块指数', '881105.TI'], ['index', '基准指数', '000300.SH'],
+    ['adjust', '个股日线口径', 'forward', { forward: '前复权', none: '不复权（本地优先）' }],
+  ],
+  'local-market-panel': [
+    ['stocks', 'A 股代码，逗号分隔（最多 6 只）', '600519.SH,000001.SZ', 'grow'],
+    ['start', '起始日期', '', 'date'], ['end', '结束日期', '', 'date'],
   ],
 };
 const fieldHelp = {
@@ -38,8 +43,11 @@ const fieldHelp = {
   'limit-break': '默认查询今天的池子和最近交易日梯队。',
   'hot-rank': '当前榜单按查询时点更新。',
   'dragon-anomaly': '日期只用于龙虎榜。盘中异动与快照按查询时点取得。',
+  'stock-sector-index': '切换不复权后优先使用本地日线。跨分红送转时，个股价格和累计变化按未复权日线计算。',
+  'local-market-panel': '日期默认近 7 个自然日，最多查询 30 个自然日。',
 };
 const freshnessStatus = { ok: '已返回', partial: '部分可用', empty: '暂无数据', error: '查询失败', unavailable: '暂不可用' };
+const sourceLabels = { local: '本地数据', remote: '远端数据', mixed: '本地与远端' };
 const statusLabels = { ok: '实时查询', partial: '部分数据可用', empty: '暂无数据' };
 const dataDate = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short' });
 
@@ -102,7 +110,7 @@ function renderDataStatus(data) {
       const moment = source.updated_at ? `数据时间 ${dataDate.format(source.updated_at)}`
         : source.fetched_at ? `查询时间 ${time(source.fetched_at)}` : '';
       const status = freshnessStatus[source.status] ?? '暂不可用';
-      list.append(make('li', [source.label, status, moment, source.message].filter(Boolean).join(' · ')));
+      list.append(make('li', [source.label, sourceLabels[source.source], status, moment, source.message].filter(Boolean).join(' · ')));
     }
     details.append(make('summary', '各数据来源的查询状态'), list);
     $('#content').append(details);
@@ -131,7 +139,8 @@ export function startOfficialBoard({ token, params, withNavigation }) {
   const auto = make('input', '', { type: 'checkbox' });
   const autoLabel = make('label', '自动刷新', { class: 'board-auto' });
   autoLabel.prepend(auto);
-  countdown.replaceChildren(autoLabel);
+  if (page === 'local-market-panel') countdown.hidden = true;
+  else countdown.replaceChildren(autoLabel);
   mode.setAttribute('role', 'status');
   const bridge = new MessageChannel();
   const send = (payload) => bridge.port1.postMessage(payload);
@@ -166,6 +175,7 @@ export function startOfficialBoard({ token, params, withNavigation }) {
 
   function loadError(error) {
     authNeeded = ['AUTH_LOGIN_REQUIRED', 'AUTH_EXPIRED', 'FUYAO_2001'].includes(error?.code);
+    const localSetup = ['FINANCE_WORKBENCH_LOCAL_UNAVAILABLE', 'DB_READ_ONLY_VIOLATION'].includes(error?.code);
     if (authNeeded) {
       disposeCharts();
       content.replaceChildren();
@@ -173,15 +183,16 @@ export function startOfficialBoard({ token, params, withNavigation }) {
       updated.textContent = '';
     }
     const card = statusCard(
-      authNeeded ? '连接金融数据账号' : hasData ? '更新失败，显示上次查询结果' : '暂时无法加载看板',
+      authNeeded ? '连接金融数据账号' : localSetup ? '准备本地数据'
+        : hasData ? '更新失败，显示上次查询结果' : '暂时无法加载看板',
       error?.message ?? '请点击“刷新数据”重试。',
       true,
     );
     card.id = 'load-error';
-    const action = make('button', authNeeded ? '打开账号' : '重试', {
+    const action = make('button', authNeeded ? '打开账号' : localSetup ? '打开设置' : '重试', {
       class: 'board-state-action primary', type: 'button',
     });
-    action.addEventListener('click', () => authNeeded ? send({ type: 'account' }) : load());
+    action.addEventListener('click', () => authNeeded || localSetup ? send({ type: 'account' }) : load());
     card.append(action);
     if (hasData) content.prepend(card);
     else content.replaceChildren(card);
@@ -219,7 +230,8 @@ export function startOfficialBoard({ token, params, withNavigation }) {
         renderBoard(page, result, params);
         renderDataStatus(result);
         hasData = true;
-        mode.textContent = statusLabels[result.status] ?? '数据已更新';
+        mode.textContent = result.status === 'ok' && page === 'local-market-panel'
+          ? '本地查询' : statusLabels[result.status] ?? '数据已更新';
         mode.className = result.status === 'ok' ? 'live' : '';
         updated.textContent = `查询时间 ${time(result.generated_at)}`;
       }

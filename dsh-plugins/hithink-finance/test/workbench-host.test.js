@@ -26,10 +26,14 @@ const schemas = {
   'market.history': [{ flags: '--thscode <code>', required: true, type: 'string' },
     { flags: '--start-ms <ms>', type: 'integer', required: true }, { flags: '--end-ms <ms>', type: 'integer', required: true },
     { flags: '--adjust <mode>', choices: ['none', 'forward', 'backward'] }],
+  'market.history-batch': [{ flags: '--thscodes <codes>', type: 'string' },
+    { flags: '--start-ms <ms>', type: 'integer', required: true }, { flags: '--end-ms <ms>', type: 'integer', required: true },
+    { flags: '--adjust <mode>', choices: ['none', 'forward', 'backward'] },
+    { flags: '--interval <value>', choices: ['1d', '1w', '1M'] }],
   'market.adjustment-factors': [{ flags: '--thscode <code>', required: true }, { flags: '--start <date>' }, { flags: '--end <date>' }],
 };
 
-async function setup(t, runner) {
+async function setup(t, runner, coverage = 'trading-calendar') {
   const root = await mkdtemp(join(tmpdir(), 'dsh-finance-workbench-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const userHome = join(root, 'user');
@@ -37,7 +41,9 @@ async function setup(t, runner) {
   const calls = [];
   const cli = { async run(argv, ...options) {
     calls.push(argv);
-    if (argv[0] === 'schema') return output('schema', { id: argv[1], command: argv[1].split('.'), options: schemas[argv[1]] });
+    if (argv[0] === 'schema') return output('schema', {
+      id: argv[1], command: argv[1].split('.'), options: schemas[argv[1]], local_history_coverage: coverage,
+    });
     if (argv[0] === 'auth') return output('auth.status', { connected: true });
     return runner(argv, ...options);
   } };
@@ -401,6 +407,43 @@ test('private CLI failures and verified source mismatch render safe errors', asy
   assert.equal((await workbench.query({ ...query, source: 'auto' })).meta.source, 'local');
 });
 
+test('daily history bindings can request local, and auto batch preserves mixed source', async (t) => {
+  const { workbench, calls } = await setup(t, (argv) => {
+    const source = argv[1] === 'auto' ? 'mixed' : 'local';
+    const command = argv.slice(2, 4).join('.');
+    if (command === 'market.history')
+      return output(command, [{ date: '2026-11-25', thscode: '000001.SZ', close: 11 }], { source });
+    return output(command, { item: [{ thscode: '000001.SZ', item: [] }] }, { source });
+  });
+  const single = { ...history, source: 'local', sources: ['local'] };
+  const { thscode, ...range } = history.params;
+  const batch = { command: 'market.history-batch', source: 'auto', sources: ['auto', 'local'],
+    params: { ...range, thscodes: `${thscode},600000.SH`, interval: '1d', adjust: 'none' }, inputs: ['thscodes'] };
+  const { data: page } = await workbench.create({ title: '历史', html: manifest({ single, batch }) });
+  const input = { pageId: page.id, revision: page.revision };
+  const result = await workbench.query({ ...input, name: 'single' });
+  assert.equal(result.meta.source, 'local');
+  assert.equal(result.data.item[0].date_ms, Date.parse('2026-11-25T00:00:00+08:00'));
+  assert.equal(result.data.item[0].close_price, 11);
+  assert.equal((await workbench.query({ ...input, name: 'batch' })).meta.source, 'mixed');
+  assert.equal((await workbench.query({ ...input, name: 'batch', source: 'local' })).meta.source, 'local');
+  assert.equal((await workbench.query({ ...input, name: 'batch', params: { thscodes: Array(11).fill(thscode).join(',') } })).ok, false);
+  assert.equal(calls.some(([command]) => command === 'auth'), false);
+});
+
+test('old installed CLIs fall back to remote for auto and reject unverified local history', async (t) => {
+  const { workbench, calls } = await setup(t, (argv) => {
+    assert.deepEqual(argv.slice(0, 2), ['--source', 'remote']);
+    return output('market.history', { item: [] }, { source: 'remote' });
+  }, null);
+  const stock = { ...history, sources: ['auto', 'local'] };
+  const { data: page } = await workbench.create({ title: '历史', html: manifest({ stock }) });
+  const input = { pageId: page.id, revision: page.revision, name: 'stock' };
+  assert.equal((await workbench.query(input)).meta.source, 'remote');
+  assert.equal((await workbench.query({ ...input, source: 'local' })).error.code, 'FINANCE_WORKBENCH_CLI_UPGRADE');
+  assert.equal(calls.filter(([command]) => command === '--source').length, 1);
+});
+
 test('tool saves workspace files and finds or revises the same dashboard from a different session', async (t) => {
   const { root, args, workbench } = await setup(t);
   const workspaceRoot = join(root, 'workspace');
@@ -517,7 +560,7 @@ test('combined Typert face registers once and only shipped template bytes are tr
   assert.equal(liveMethod.mode, 'stream');
   assert.deepEqual(liveMethod.cancellation, { parameter: 'signal' });
   const templates = (await workbench.templateList()).data;
-  assert.equal(templates.length, 23);
+  assert.equal(templates.length, 24);
   assert.ok(templates.every((item) => !('html' in item) && !('sampleHtml' in item)));
   const staticPage = (await workbench.templateGet('template:stock-overview')).data;
   assert.equal(staticPage.dataMode, 'sample');

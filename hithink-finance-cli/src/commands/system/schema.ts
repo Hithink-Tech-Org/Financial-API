@@ -75,6 +75,10 @@ export function registerSchemaCommand(
                 globalOptions: tableOutputOptions,
                 paging: capability.paging,
                 window: capability.window,
+                ...((capability.id === 'market.history' ||
+                  capability.id === 'market.history-batch') && {
+                  local_history_coverage: 'trading-calendar',
+                }),
               }
             : {
                 id: capability.id,
