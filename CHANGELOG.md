@@ -8,6 +8,10 @@
 - 新增独立的 `hithink-finance-mcp`，提供 MCP 配置、业务域与 tool 选路；按业务分类合并文档，每个工具小节包含参数、返回字段及关联结构。
 - CLI 0.2.0 的领域 Skills 独立随包交付，description 负责首选路由，shared 提供通用规则和辅助选路。
 
+## 2026-11-27 — DeepSeek Harness 插件 0.1.2
+
+- 案例游廊新增 14 个金融看板和 3 个互动应用。样例自带离线行情快照，支持预览、保存和使用创作提示词。 [插件安装和使用](dsh-plugins/hithink-finance/README.md)
+
 ## 2026-11-26 — DeepSeek Harness 插件 0.1.1
 
 - 设置页可管理本地数据库、手动同步，并设置 DSH 运行期间的每日同步时间。

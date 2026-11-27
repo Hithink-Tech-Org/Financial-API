@@ -1,6 +1,6 @@
 {
   "name": "@hithink-tech/dsh-finance",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Hithink Finance workbench, pages and charts for DeepSeek Harness",
   "keywords": ["dsh-plugin", "deepseek-harness", "financial-data"],
   "icon": "./assets/icon.png",

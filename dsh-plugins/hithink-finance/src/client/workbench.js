@@ -4,6 +4,7 @@ import { Account, FinancePanelIcon } from './account.js';
 import { DataSettings } from './data-settings.js';
 import { OfficialLiveBoard } from './official-live-board.js';
 import { acceptsFramePort, buildInteractiveDocument, buildOfficialSample, buildPageDocument } from './workbench-frame.js';
+import { samplePreviews } from './workbench-sample-previews.js';
 
 const docsUrl = 'https://fuyao.aicubes.cn/docs/';
 const gallery = { view: 'templates' };
@@ -101,7 +102,7 @@ function useSavedPage(workbench, id, directory, isVisible, revision, sameData) {
 }
 
 function TemplateArt({ item }) {
-  const image = officialUrl(item.imageUrl);
+  const image = samplePreviews.get(item.id.replace(/^template:/, '')) ?? officialUrl(item.imageUrl);
   return h('span', { className: 'hf-wb-art' },
     image ? h('img', { alt: '', src: image, loading: 'lazy', decoding: 'async', referrerPolicy: 'no-referrer',
       onError: (event) => { event.currentTarget.hidden = true; } }) : null,
@@ -126,7 +127,7 @@ function TemplateList({ workbench, navigate, createCase, creating, createError, 
     && (!needle || [item.title, item.category, item.description ?? item.summary].some((value) => value?.toLocaleLowerCase('zh-CN').includes(needle))));
   return h('div', { className: 'hf-wb-content' },
     h('header', { className: 'hf-wb-intro' },
-      h('div', null, h('h1', null, galleryTitle), h('p', null, '浏览可刷新的动态看板和静态样例，用案例提示词做自己的看板。'))),
+      h('div', null, h('h1', null, galleryTitle), h('p', null, '浏览金融看板和互动应用，用案例提示词制作自己的作品。'))),
     createError && h('p', { role: 'alert', className: 'hf-wb-error' }, createError),
     state.loading || state.error ? h(LoadState, { state, label: '正在加载案例…', preview: 'gallery' })
       : h('div', { className: 'hf-wb-library' },

@@ -28,6 +28,7 @@ const required = [
   'dist/third-party/tslib/LICENSE.txt', 'dist/third-party/tslib/CopyrightNotice.txt',
   'dist/third-party/lightweight-charts/LICENSE', 'dist/third-party/lightweight-charts/NOTICE',
   'dist/third-party/fancy-canvas/LICENSE',
+  'dist/third-party/matter-js/LICENSE',
 ];
 const publicTrees = [
   /^dist\/workbench-samples\/\d{2}-[a-z0-9-]+\.html$/u,
@@ -61,7 +62,7 @@ async function checkHost(prefix) {
     pathToFileURL(path.join(path.dirname(main), 'workbench-templates.js'))
   );
   const samples = workbenchTemplates.filter(({ dataMode }) => dataMode === 'sample');
-  assert.equal(samples.length, 16);
+  assert.equal(samples.length, 33);
   for (const { id } of samples) assert.match(await getTemplateSample(id), /<html\b/iu, id);
 
   const tools = new Set();

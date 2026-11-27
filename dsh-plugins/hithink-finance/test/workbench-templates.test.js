@@ -4,13 +4,15 @@ import test from 'node:test';
 import { officialBoardPages } from '../src/client/official-workbench/pages.js';
 import { galleryCases } from '../src/host/cases.mjs';
 import { pageQueries, queryArguments } from '../src/host/workbench-data.js';
+import { maxPageBytes, pageContent } from '../src/host/workbench-store.js';
 import { bundledExamples, getTemplateHtml, getTemplateSample, workbenchTemplates } from '../src/host/workbench-templates.js';
 import { QUICK_START_PROMPT, QUICK_START_TITLE } from '../src/shared/quick-start.js';
 
 test('workbench preserves the gallery cases and serves their original examples', async () => {
-  assert.equal(workbenchTemplates.length, 24);
-  assert.equal(new Set(workbenchTemplates.map(({ id }) => id)).size, 24);
-  assert.equal(bundledExamples().length, 16);
+  assert.equal(workbenchTemplates.length, 41);
+  assert.equal(new Set(workbenchTemplates.map(({ id }) => id)).size, 41);
+  const assets = new Map(bundledExamples().map((asset) => [asset.name, asset]));
+  assert.equal(assets.size, 33);
   const counts = { live: 0, sample: 0 };
 
   for (const [i, template] of workbenchTemplates.entries()) {
@@ -34,14 +36,21 @@ test('workbench preserves the gallery cases and serves their original examples',
       continue;
     }
 
-    const asset = new URL(template.previewUrl).pathname.split('/').at(-2);
-    const original = await readFile(new URL(`../../../examples/inspirations/${asset}/example.html`, import.meta.url), 'utf8');
+    const asset = assets.get(item.sample ?? new URL(template.previewUrl).pathname.split('/').at(-2));
+    const source = new URL(`../${asset.path}`, import.meta.url);
+    const original = await readFile(source, 'utf8');
     assert.equal(sample, original);
     assert.equal(template.dataMode, 'sample');
     assert.equal(html, sample);
     assert.doesNotMatch(html, /id="hithink-finance-data"/);
+    if (item.sample) {
+      assert.ok(Buffer.byteLength(html) <= maxPageBytes, item.id);
+      assert.deepEqual(pageContent(template.title, html).queries, []);
+      const preview = await readFile(new URL('preview.jpg', source));
+      assert.deepEqual([...preview.subarray(0, 3)], [0xff, 0xd8, 0xff]);
+    }
   }
-  assert.deepEqual(counts, { live: 8, sample: 16 });
+  assert.deepEqual(counts, { live: 8, sample: 33 });
   assert.equal(await getTemplateSample('../../not-a-template'), undefined);
 });
 

@@ -1,6 +1,7 @@
 const dashboard = '快速看板';
 const market = '盘面观察';
 const research = '进阶研究';
+const interactive = '互动应用';
 const marketData = '需要已初始化且覆盖研究区间的全市场本地库。首次下载需要平台的数据下载权限。';
 
 const cases = [
@@ -198,12 +199,149 @@ const cases = [
     summary: '从本地数据库读取所选 A 股的未复权日线，查看实际记录日期和缺少本地记录的标的。',
     task: '使用本地数据查询指定 A 股在选定区间的未复权日线。按标的标明实际记录区间和条数，仅在有本地记录时展示价格与成交量。',
   },
+  {
+    id: 'market-review',
+    title: '市场全景复盘',
+    category: market,
+    summary: '从宽基指数、全市场涨跌分布和行业表现回看一个交易日。',
+    sample: '17-market-review',
+    task: '以同一交易日的 A 股快照、宽基指数和涨跌停池做盘后复盘。展示涨跌家数、涨跌幅分布、成交额和领先行业，能下钻到代表个股，并标明快照时点与市场覆盖范围。',
+  },
+  {
+    id: 'sector-rotation-map',
+    title: '板块轮动地图',
+    category: market,
+    summary: '对比行业强弱、涨跌扩散和排名变化，展开查看成分股。',
+    sample: '18-sector-rotation-map',
+    task: '对齐同一行业体系下的行业指数日线与当前成分股行情，按一致窗口比较强度、连涨和涨跌分布。支持筛选行业并查看成分明细，标明成分与行情日期。',
+  },
+  {
+    id: 'semiconductor-liquidity',
+    title: '半导体成交梯队',
+    category: market,
+    summary: '按成交额观察半导体成分股梯队，并对比涨跌表现。',
+    sample: '19-semiconductor-liquidity',
+    task: '用可核实的半导体指数成分和同一时点的股票快照，按成交额划分梯队。展示头部成交占比、涨跌分布及个股日线，注明分层口径和成分日期。',
+  },
+  {
+    id: 'intraday-pulse',
+    title: '异动与盘中笔记',
+    category: market,
+    summary: '按时间、类型和标的浏览盘中异动，结合热度与涨跌停观察。',
+    sample: '20-intraday-pulse',
+    task: '拉取当日个股异动、小时热股榜、涨跌停池和行情快照，按上游顺序展示异动原因并标注数据时点。支持按类型或证券搜索，在同一页查看个股走势并记录观察笔记。',
+  },
+  {
+    id: 'abnormal-moves-archive',
+    title: '严重异动监控档案',
+    category: market,
+    summary: '按股票和日期归档严重异动，联动查看近期价格表现。',
+    sample: '21-abnormal-moves-archive',
+    task: '按股票和交易日组织可核实的严重异动记录，保留原因、触发区间及日期，支持从档案打开个股行情。区分事件记录时间和行情时点，注明缺数与统计范围。',
+  },
+  {
+    id: 'topic-news-evidence',
+    title: '题材与资讯证据台',
+    category: market,
+    summary: '把题材、相关股票和资讯放在同一页核对。',
+    sample: '22-topic-news-evidence',
+    task: '把涨停原因、题材相关股票、资讯标题和发布时间按明确规则归组。点击题材查看证据和个股行情，标明原文来源和筛选范围。',
+  },
+  {
+    id: 'etf-trend-screen',
+    title: 'ETF 趋势筛选台',
+    category: dashboard,
+    summary: '用区间收益、趋势和成交活跃度筛选 ETF，再看走势详情。',
+    sample: '23-etf-trend-screen',
+    task: '用 ETF 快照与日线生成筛选表，支持切换观察窗口、最低成交额和趋势条件。展示 ETF 收益、均线与成交额，缺少完整窗口时标明数据覆盖。',
+  },
+  {
+    id: 'hand-drawn-pattern',
+    title: '手绘形态检索',
+    category: research,
+    summary: '画出目标曲线，在历史日线里查找相似片段。',
+    sample: '24-hand-drawn-pattern',
+    task: '提供手绘曲线和 20、40、60 个交易日窗口。对手绘曲线和候选日线片段进行归一化，列出相似度、标的和命中日期，并联动显示片段与完整走势。说明样本范围和匹配方法。',
+  },
+  {
+    id: 'watchlist-multi-chart',
+    title: '自选多股同屏',
+    category: dashboard,
+    summary: '搜索并添加股票，同屏比较多只自选股的行情和日线。',
+    sample: '25-watchlist-multi-chart',
+    task: '支持按名称或代码添加、移除自选股，用同一日期窗口并排展示最新报价、日线和成交量。标出数据日期、行情覆盖和没有历史日线的标的。',
+  },
+  {
+    id: 'price-structure',
+    title: '分型与价格结构',
+    category: research,
+    summary: '在日线中定位顶底分型和价格重叠区间。',
+    sample: '26-price-structure',
+    task: '对选定股票的日线提取顶底分型，按明示规则组织波段与价格重叠区间。支持切换标的，标出已确认位置及其使用的历史窗口。',
+  },
+  {
+    id: 'futures-strength-distribution',
+    title: '期货强弱分布',
+    category: market,
+    summary: '比较期货各品种与板块的涨跌和强弱分布。',
+    sample: '27-futures-strength-distribution',
+    task: '按品种和板块归类可用期货日线，按同一交易日与计算窗口展示涨跌和强弱分布。支持筛选板块并查看品种日线，注明合约选择规则与覆盖范围。',
+  },
+  {
+    id: 'futures-window-resonance',
+    title: '期货多窗口共振',
+    category: research,
+    summary: '对照不同时间窗口的期货品种强弱和排名一致性。',
+    sample: '28-futures-window-resonance',
+    task: '对齐期货品种的日线交易日，计算多个窗口的收益和排名。通过热力图和排名表定位方向一致或分歧的品种，展开查看合约走势并列出窗口口径。',
+  },
+  {
+    id: 'agricultural-price-basis',
+    title: '农产品价量与基差',
+    category: research,
+    summary: '联动观察农产品期货日线、成交、持仓和基差。',
+    sample: '29-agricultural-price-basis',
+    task: '选择当前农产品主力合约，展示日线、成交量和默认参考地的最新官方基差。分别标明期货行情时点、现货日期、参考地和计量单位，缺少基差时留空。',
+  },
+  {
+    id: 'domestic-gold-linkage',
+    title: '国内黄金联动研究',
+    category: research,
+    summary: '在同一时间轴对比黄金期货、黄金 ETF、板块和相关股票。',
+    sample: '30-domestic-gold-linkage',
+    task: '用相同交易日和基期对齐国内黄金期货、黄金 ETF、黄金板块与代表股票。展示相对收益和同期相关性，标明样本数、行情日期及各资产的计算口径。',
+  },
+  {
+    id: 'angry-bulls',
+    title: '愤怒的小牛',
+    category: interactive,
+    summary: '用行情快照生成关卡，通过拖拽发射挑战目标。',
+    sample: '31-angry-bulls',
+    task: '用 A 股行情快照生成可玩的物理闯关应用，把可核实的涨跌和成交信息用于关卡参数。给出操作提示、计分和重玩入口，标明快照时点。',
+  },
+  {
+    id: 'portfolio-defense',
+    title: '持仓保卫战',
+    category: interactive,
+    summary: '在塔防关卡中体验仓位、风险分散和市场波动。',
+    sample: '32-portfolio-defense',
+    task: '用一组选定股票的历史行情设计塔防教学关卡，说明价格波动如何映射为关卡事件。提供选关、部署、暂停和结算，并把游戏得分与真实证券收益分开呈现。',
+  },
+  {
+    id: 'watchlist-price-volume-arena',
+    title: '自选股价量擂台',
+    category: interactive,
+    summary: '让两只股票同屏比拼涨跌幅、成交额和量价表现。',
+    sample: '33-watchlist-price-volume-arena',
+    task: '从自选列表选两只股票，使用同一时点的行情比较涨跌、成交额和振幅。提供可切换的对战对象、逐项比分及并列处理，标明数据时间和评分规则。',
+  },
 ];
 
 export const galleryCases = cases.map(({ example, task, ...item }) => {
   const exampleUrl = example && 'https://fuyao.aicubes.cn/best-practices/' + example;
-  const intro = `请用真实数据制作名为「${item.title}」的看板，并保存到同花顺金融数据工作台。`;
-  const refresh = !example || example.startsWith('dynamic/') ? '看板数据可手动刷新。' : '';
+  const format = item.category === interactive ? '互动应用' : '看板';
+  const intro = `请用真实数据制作名为「${item.title}」的${format}，并保存到同花顺金融数据工作台。`;
+  const refresh = (!item.sample && !example) || example?.startsWith('dynamic/') ? '看板数据可手动刷新。' : '';
   const prompt = `${intro}\n\n${task}${refresh}`;
   return { ...item, exampleUrl, prompt };
 });

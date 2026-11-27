@@ -14,7 +14,7 @@
    npm run verify:release-package -- ./out/dsh-finance-release
    ```
 
-2. 在适用的 DSH Web 和 Desktop 验证安装及受影响的功能。CI 从 tarball 实际隔离安装并检查 Host 入口、工具和 Skill 注册、16 个静态样例、客户端包及许可证。
+2. 在适用的 DSH Web 和 Desktop 验证安装及受影响的功能。CI 从 tarball 实际隔离安装并检查 Host 入口、工具和 Skill 注册、随包静态样例、客户端包及许可证。
 3. 公开候选提交合入 `main` 后，等待该提交的 DSH CI 推送运行成功，并确认运行已上传 `dsh-finance-release-<SHA>-<attempt>`。该制品包含经过安装验证的 tarball 及校验记录。
 
 ## 发布和恢复

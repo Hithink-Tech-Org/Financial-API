@@ -3,16 +3,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundledExamples } from '../src/host/workbench-templates.js';
 
-const source = fileURLToPath(new URL('../../../examples/inspirations/', import.meta.url));
+const plugin = new URL('../', import.meta.url);
 const output = fileURLToPath(new URL('../dist/workbench-samples/', import.meta.url));
 const check = process.argv.includes('--check');
 const expected = new Set();
 
 if (!check) await mkdir(output, { recursive: true });
 for (const asset of bundledExamples()) {
-  const name = `${asset}.html`;
+  const name = `${asset.name}.html`;
   expected.add(name);
-  const html = await readFile(join(source, asset, 'example.html'));
+  const html = await readFile(new URL(asset.path, plugin));
   const path = join(output, name);
   if (check) {
     if (!html.equals(await readFile(path))) throw new Error(`Workbench example out of date: ${name}`);

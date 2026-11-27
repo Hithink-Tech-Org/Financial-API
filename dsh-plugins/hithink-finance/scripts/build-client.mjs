@@ -23,7 +23,7 @@ await build({
   format: 'cjs',
   target: 'es2022',
   external: ['react', 'react-dom', ...(manifest.dsh.client.external ?? [])],
-  loader: { '.css': 'text', '.html': 'text', '.png': 'dataurl' },
+  loader: { '.css': 'text', '.html': 'text', '.jpg': 'dataurl', '.png': 'dataurl' },
   plugins: [{
     name: 'official-workbench-runtime',
     setup(builder) {
@@ -51,6 +51,7 @@ for (const [source, name, files] of [
   ['node_modules', 'lightweight-charts', ['LICENSE']],
   ['third-party', 'lightweight-charts', ['NOTICE']],
   ['third-party', 'fancy-canvas', ['LICENSE']],
+  ['third-party', 'matter-js', ['LICENSE']],
 ]) {
   const destination = new URL(`../dist/third-party/${name}/`, import.meta.url);
   await mkdir(destination, { recursive: true });
